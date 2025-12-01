@@ -305,10 +305,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.FocusContent):
-			// Exit fullscreen if in fullscreen mode
-			if m.fullscreen != 0 {
+			// If content is already fullscreen, just exit fullscreen
+			if m.fullscreen == PanelContent {
 				m.fullscreen = 0
 				m = m.updateSizes()
+				return m, nil
 			}
 			// Close mini buffer if open
 			if m.miniVisible {
@@ -316,7 +317,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.layout = layout.Calculate(m.width, m.height, m.miniVisible)
 				m = m.updateSizes()
 			}
-			// Toggle fullscreen if already focused
+			// Enter fullscreen if already focused
 			if m.focus == PanelContent {
 				m.fullscreen = PanelContent
 				m = m.updateSizes()
