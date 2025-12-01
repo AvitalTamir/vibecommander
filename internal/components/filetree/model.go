@@ -511,17 +511,36 @@ func (m Model) getGitIndicator(node *Node) string {
 		return m.renderGitStatus(status)
 	}
 
-	// For directories, check if any child has changes
+	// For directories, check status of all children
 	if node.IsDir {
 		dirPrefix := relPath + string(filepath.Separator)
+		hasChanges := false
+		allStaged := true
+		hasUntracked := false
+
 		for path, status := range m.gitStatus.Files {
 			if strings.HasPrefix(path, dirPrefix) {
-				// Directory contains modified files
-				return lipgloss.NewStyle().
-					Foreground(theme.ElectricYellow).
-					Render("●")
+				hasChanges = true
+
+				// Check if untracked
+				if status.Staging == git.StatusUntracked || status.Worktree == git.StatusUntracked {
+					hasUntracked = true
+					allStaged = false
+				} else if status.Worktree != git.StatusUnmodified && status.Worktree != ' ' {
+					// Has unstaged changes
+					allStaged = false
+				}
 			}
-			_ = status // silence unused warning
+		}
+
+		if hasChanges {
+			if hasUntracked {
+				return lipgloss.NewStyle().Foreground(theme.LaserPurple).Render("●")
+			} else if allStaged {
+				return lipgloss.NewStyle().Foreground(theme.MatrixGreen).Render("●")
+			} else {
+				return lipgloss.NewStyle().Foreground(theme.ElectricYellow).Render("●")
+			}
 		}
 	}
 
@@ -529,31 +548,44 @@ func (m Model) getGitIndicator(node *Node) string {
 }
 
 // renderGitStatus returns a styled indicator for a file's git status
+// Shows both staging and worktree status: [staged][worktree]
 func (m Model) renderGitStatus(status git.FileStatus) string {
-	// Prioritize staging status, then worktree
-	code := status.Worktree
-	if status.Staging != git.StatusUnmodified && status.Staging != ' ' {
-		code = status.Staging
+	var result string
+
+	// Staged status (index) - shown in green
+	staged := status.Staging
+	if staged != git.StatusUnmodified && staged != ' ' && staged != git.StatusUntracked {
+		stagedStyle := lipgloss.NewStyle().Foreground(theme.MatrixGreen)
+		switch staged {
+		case git.StatusModified:
+			result += stagedStyle.Render("M")
+		case git.StatusAdded:
+			result += stagedStyle.Render("A")
+		case git.StatusDeleted:
+			result += stagedStyle.Render("D")
+		case git.StatusRenamed:
+			result += stagedStyle.Render("R")
+		case git.StatusCopied:
+			result += stagedStyle.Render("C")
+		}
 	}
 
-	switch code {
-	case git.StatusModified:
-		return lipgloss.NewStyle().Foreground(theme.ElectricYellow).Render("M")
-	case git.StatusAdded:
-		return lipgloss.NewStyle().Foreground(theme.MatrixGreen).Render("A")
-	case git.StatusDeleted:
-		return lipgloss.NewStyle().Foreground(theme.NeonRed).Render("D")
-	case git.StatusRenamed:
-		return lipgloss.NewStyle().Foreground(theme.CyberCyan).Render("R")
-	case git.StatusCopied:
-		return lipgloss.NewStyle().Foreground(theme.CyberCyan).Render("C")
-	case git.StatusUntracked:
-		return lipgloss.NewStyle().Foreground(theme.LaserPurple).Render("?")
-	case git.StatusUnmerged:
-		return lipgloss.NewStyle().Foreground(theme.NeonRed).Bold(true).Render("!")
-	default:
-		return ""
+	// Worktree status (unstaged) - shown in yellow/red
+	worktree := status.Worktree
+	if worktree != git.StatusUnmodified && worktree != ' ' {
+		switch worktree {
+		case git.StatusModified:
+			result += lipgloss.NewStyle().Foreground(theme.ElectricYellow).Render("M")
+		case git.StatusDeleted:
+			result += lipgloss.NewStyle().Foreground(theme.NeonRed).Render("D")
+		case git.StatusUntracked:
+			result += lipgloss.NewStyle().Foreground(theme.LaserPurple).Render("?")
+		case git.StatusUnmerged:
+			result += lipgloss.NewStyle().Foreground(theme.NeonRed).Bold(true).Render("!")
+		}
 	}
+
+	return result
 }
 
 // SetRoot sets the root directory.

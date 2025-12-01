@@ -1,6 +1,8 @@
 package content
 
 import (
+	"path/filepath"
+
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/components/content/viewer"
 	"github.com/avitaltamir/vibecommander/internal/components/terminal"
@@ -157,8 +159,12 @@ func (m Model) View() string {
 		return ""
 	}
 
-	// Render the title
-	title := theme.RenderTitle(m.mode.String(), m.Focused())
+	// Render the title - show filename in viewer mode if file is loaded
+	titleText := m.mode.String()
+	if m.mode == ModeViewer && m.currentPath != "" {
+		titleText = filepath.Base(m.currentPath)
+	}
+	title := theme.RenderTitle(titleText, m.Focused())
 
 	// Get content based on mode
 	var content string
