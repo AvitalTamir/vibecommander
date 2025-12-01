@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/alecthomas/chroma/v2"
@@ -12,6 +13,7 @@ import (
 	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/theme"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -37,13 +39,28 @@ type Model struct {
 	ready    bool
 	err      error
 
+	// Search
+	searching    bool
+	searchInput  textinput.Model
+	searchQuery  string
+	searchRegex  *regexp.Regexp
+	matchLines   []int // Line numbers (0-indexed) with matches
+	currentMatch int   // Current match index (-1 if none)
+
 	theme *theme.Theme
 }
 
 // New creates a new content viewer model.
 func New() Model {
+	ti := textinput.New()
+	ti.Placeholder = "regex pattern..."
+	ti.CharLimit = 256
+	ti.Width = 30
+
 	return Model{
-		theme: theme.DefaultTheme(),
+		theme:        theme.DefaultTheme(),
+		searchInput:  ti,
+		currentMatch: -1,
 	}
 }
 
@@ -77,10 +94,87 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.path = msg.Path
 			m.content = msg.Content
 			m.err = nil
+			// Clear search when loading new file
+			m.clearSearch()
 			m.viewport.SetContent(m.renderContent())
 			m.viewport.GotoTop()
 		}
 		return m, nil
+
+	case tea.KeyMsg:
+		if !m.Focused() {
+			return m, nil
+		}
+
+		// Handle search mode
+		if m.searching {
+			switch msg.Type {
+			case tea.KeyEscape:
+				// Just close input, keep existing search highlights
+				m.searching = false
+				m.searchInput.Blur()
+				return m, nil
+			case tea.KeyEnter:
+				// Perform search or go to next match
+				query := m.searchInput.Value()
+				if query != m.searchQuery {
+					// New search
+					m.performSearch(query)
+				} else if len(m.matchLines) > 0 {
+					// Go to next match
+					m.currentMatch = (m.currentMatch + 1) % len(m.matchLines)
+					m.scrollToCurrentMatch()
+				}
+				// Close search input and re-render
+				m.searching = false
+				m.searchInput.Blur()
+				m.viewport.SetContent(m.renderContent())
+				return m, nil
+			default:
+				// Pass to text input
+				m.searchInput, cmd = m.searchInput.Update(msg)
+				cmds = append(cmds, cmd)
+				return m, tea.Batch(cmds...)
+			}
+		}
+
+		// Normal mode - check for Esc to clear search
+		if msg.Type == tea.KeyEscape && len(m.matchLines) > 0 {
+			m.clearSearch()
+			m.viewport.SetContent(m.renderContent())
+			return m, nil
+		}
+
+		// Normal mode - check for search trigger
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == '/' {
+			m.searching = true
+			m.searchInput.Focus()
+			return m, textinput.Blink
+		}
+
+		// Check for 'n' to go to next match (when not searching)
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'n' && len(m.matchLines) > 0 {
+			m.currentMatch = (m.currentMatch + 1) % len(m.matchLines)
+			m.scrollToCurrentMatch()
+			m.viewport.SetContent(m.renderContent())
+			return m, nil
+		}
+
+		// Check for 'p' to go to previous match
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'p' && len(m.matchLines) > 0 {
+			m.currentMatch--
+			if m.currentMatch < 0 {
+				m.currentMatch = len(m.matchLines) - 1
+			}
+			m.scrollToCurrentMatch()
+			m.viewport.SetContent(m.renderContent())
+			return m, nil
+		}
+
+		// Pass other keys to viewport
+		m.viewport, cmd = m.viewport.Update(msg)
+		cmds = append(cmds, cmd)
+		return m, tea.Batch(cmds...)
 	}
 
 	// Handle keyboard only when focused
@@ -97,6 +191,24 @@ func (m Model) View() string {
 	if !m.ready {
 		return m.renderPlaceholder()
 	}
+
+	// If searching, show search bar at bottom
+	if m.searching {
+		w, h := m.Size()
+		viewportHeight := h - 1 // Reserve 1 line for search bar
+
+		// Temporarily resize viewport for display
+		oldHeight := m.viewport.Height
+		m.viewport.Height = viewportHeight
+		content := m.viewport.View()
+		m.viewport.Height = oldHeight
+
+		// Render search bar
+		searchBar := m.renderSearchBar(w)
+
+		return lipgloss.JoinVertical(lipgloss.Left, content, searchBar)
+	}
+
 	return m.viewport.View()
 }
 
@@ -130,21 +242,106 @@ func (m Model) renderContent() string {
 	// Get syntax highlighted content
 	highlighted := m.highlightSyntax()
 
-	// Add line numbers
-	lines := strings.Split(highlighted, "\n")
+	// Build set of match lines for quick lookup
+	matchSet := make(map[int]bool)
+	for _, ln := range m.matchLines {
+		matchSet[ln] = true
+	}
+	currentMatchLine := -1
+	if m.currentMatch >= 0 && m.currentMatch < len(m.matchLines) {
+		currentMatchLine = m.matchLines[m.currentMatch]
+	}
+
+	// Split both raw and highlighted content
+	rawLines := strings.Split(m.content, "\n")
+	highlightedLines := strings.Split(highlighted, "\n")
+
 	var result strings.Builder
 
 	lineNumStyle := theme.DiffLineNumberStyle
 	sepStyle := lipgloss.NewStyle().Foreground(theme.DimPurple)
+	matchLineNumStyle := lipgloss.NewStyle().Foreground(theme.ElectricYellow).Bold(true)
+	currentMatchLineNumStyle := lipgloss.NewStyle().Foreground(theme.MatrixGreen).Bold(true)
 
-	for i, line := range lines {
-		lineNum := lineNumStyle.Render(padLeft(i+1, 4))
+	for i := 0; i < len(highlightedLines); i++ {
+		var lineNum string
+		var lineContent string
+		sep := sepStyle.Render(" │ ")
+
+		if i == currentMatchLine {
+			// Current match - highlight in green, show matched text
+			lineNum = currentMatchLineNumStyle.Render(padLeft(i+1, 4))
+			sep = lipgloss.NewStyle().Foreground(theme.MatrixGreen).Render(" │ ")
+			if i < len(rawLines) {
+				lineContent = m.highlightMatchesInLine(rawLines[i], true)
+			} else {
+				lineContent = highlightedLines[i]
+			}
+		} else if matchSet[i] {
+			// Other match - highlight in yellow, show matched text
+			lineNum = matchLineNumStyle.Render(padLeft(i+1, 4))
+			sep = lipgloss.NewStyle().Foreground(theme.ElectricYellow).Render(" │ ")
+			if i < len(rawLines) {
+				lineContent = m.highlightMatchesInLine(rawLines[i], false)
+			} else {
+				lineContent = highlightedLines[i]
+			}
+		} else {
+			lineNum = lineNumStyle.Render(padLeft(i+1, 4))
+			lineContent = highlightedLines[i]
+		}
+
 		result.WriteString(lineNum)
-		result.WriteString(sepStyle.Render(" │ "))
-		result.WriteString(line)
-		if i < len(lines)-1 {
+		result.WriteString(sep)
+		result.WriteString(lineContent)
+		if i < len(highlightedLines)-1 {
 			result.WriteString("\n")
 		}
+	}
+
+	return result.String()
+}
+
+// highlightMatchesInLine highlights all regex matches within a line.
+func (m Model) highlightMatchesInLine(line string, isCurrent bool) string {
+	if m.searchRegex == nil {
+		return line
+	}
+
+	matches := m.searchRegex.FindAllStringIndex(line, -1)
+	if len(matches) == 0 {
+		return line
+	}
+
+	// Define highlight styles
+	var matchStyle lipgloss.Style
+	if isCurrent {
+		matchStyle = lipgloss.NewStyle().
+			Background(theme.MatrixGreen).
+			Foreground(lipgloss.Color("0"))
+	} else {
+		matchStyle = lipgloss.NewStyle().
+			Background(theme.ElectricYellow).
+			Foreground(lipgloss.Color("0"))
+	}
+
+	// Build result with highlighted matches
+	var result strings.Builder
+	lastEnd := 0
+
+	for _, match := range matches {
+		start, end := match[0], match[1]
+		// Add text before match
+		if start > lastEnd {
+			result.WriteString(line[lastEnd:start])
+		}
+		// Add highlighted match
+		result.WriteString(matchStyle.Render(line[start:end]))
+		lastEnd = end
+	}
+	// Add remaining text
+	if lastEnd < len(line) {
+		result.WriteString(line[lastEnd:])
 	}
 
 	return result.String()
@@ -274,6 +471,126 @@ func (m Model) SetSize(width, height int) Model {
 // ScrollPercent returns the current scroll position as a percentage.
 func (m Model) ScrollPercent() float64 {
 	return m.viewport.ScrollPercent()
+}
+
+// IsSearching returns whether the viewer is in search mode.
+func (m Model) IsSearching() bool {
+	return m.searching
+}
+
+// renderSearchBar renders the search input bar.
+func (m Model) renderSearchBar(width int) string {
+	prefix := lipgloss.NewStyle().
+		Foreground(theme.CyberCyan).
+		Bold(true).
+		Render("/")
+
+	// Match info
+	var matchInfo string
+	if m.searchQuery != "" {
+		if len(m.matchLines) == 0 {
+			matchInfo = lipgloss.NewStyle().
+				Foreground(theme.NeonRed).
+				Render(" [no matches]")
+		} else {
+			matchInfo = lipgloss.NewStyle().
+				Foreground(theme.MatrixGreen).
+				Render(" [" + itoa(m.currentMatch+1) + "/" + itoa(len(m.matchLines)) + "]")
+		}
+	}
+
+	input := m.searchInput.View()
+
+	// Combine and pad to width
+	bar := prefix + input + matchInfo
+	style := lipgloss.NewStyle().
+		Background(lipgloss.Color("236")).
+		Width(width)
+
+	return style.Render(bar)
+}
+
+// performSearch searches for the regex pattern in the content.
+func (m *Model) performSearch(query string) {
+	m.searchQuery = query
+	m.matchLines = nil
+	m.currentMatch = -1
+	m.searchRegex = nil
+
+	if query == "" {
+		return
+	}
+
+	// Compile regex (case-insensitive by default)
+	re, err := regexp.Compile("(?i)" + query)
+	if err != nil {
+		// Invalid regex, try as literal
+		re, err = regexp.Compile(regexp.QuoteMeta(query))
+		if err != nil {
+			return
+		}
+	}
+	m.searchRegex = re
+
+	// Find all matching lines
+	lines := strings.Split(m.content, "\n")
+	for i, line := range lines {
+		if re.MatchString(line) {
+			m.matchLines = append(m.matchLines, i)
+		}
+	}
+
+	// Go to first match if found
+	if len(m.matchLines) > 0 {
+		m.currentMatch = 0
+		m.scrollToCurrentMatch()
+	}
+}
+
+// scrollToCurrentMatch scrolls the viewport to show the current match.
+func (m *Model) scrollToCurrentMatch() {
+	if m.currentMatch < 0 || m.currentMatch >= len(m.matchLines) {
+		return
+	}
+
+	line := m.matchLines[m.currentMatch]
+	// Scroll so the match is roughly centered
+	targetLine := line - m.viewport.Height/2
+	if targetLine < 0 {
+		targetLine = 0
+	}
+	m.viewport.SetYOffset(targetLine)
+}
+
+// clearSearch clears the search state.
+func (m *Model) clearSearch() {
+	m.searching = false
+	m.searchQuery = ""
+	m.searchRegex = nil
+	m.matchLines = nil
+	m.currentMatch = -1
+	m.searchInput.SetValue("")
+	m.searchInput.Blur()
+}
+
+// itoa converts int to string without importing strconv
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var s string
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	for n > 0 {
+		s = string(rune('0'+n%10)) + s
+		n /= 10
+	}
+	if neg {
+		s = "-" + s
+	}
+	return s
 }
 
 // Helper to pad line numbers
