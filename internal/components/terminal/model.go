@@ -10,10 +10,10 @@ import (
 
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/theme"
+	"github.com/hinshun/vt10x"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/creack/pty"
-	"github.com/hinshun/vt10x"
 )
 
 // Messages
@@ -113,7 +113,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			case tea.KeyEnter:
 				input = []byte("\r")
 			case tea.KeyBackspace:
-				input = []byte{127}
+				if msg.Alt {
+					input = []byte{27, 127} // ESC + DEL for Alt+Backspace (delete word)
+				} else {
+					input = []byte{127}
+				}
 			case tea.KeyTab:
 				input = []byte("\t")
 			case tea.KeySpace:
@@ -322,6 +326,11 @@ func (m Model) renderVT() string {
 		return ""
 	}
 
+	// Get cursor position and visibility
+	cursor := m.vt.Cursor()
+	// Respect app's cursor visibility - TUI apps often hide cursor and draw their own
+	cursorVisible := m.vt.CursorVisible() && m.Focused()
+
 	var lines []string
 	for row := 0; row < rows; row++ {
 		var line strings.Builder
@@ -335,14 +344,36 @@ func (m Model) renderVT() string {
 			// Build style with foreground and background colors
 			style := lipgloss.NewStyle()
 
-			// Apply foreground color
-			if fg := colorToLipgloss(glyph.FG); fg != "" {
-				style = style.Foreground(lipgloss.Color(fg))
-			}
+			// Check if this is the cursor position
+			isCursor := cursorVisible && col == cursor.X && row == cursor.Y
 
-			// Apply background color
-			if bg := colorToLipgloss(glyph.BG); bg != "" {
-				style = style.Background(lipgloss.Color(bg))
+			if isCursor {
+				// Render cursor with reverse video (swap fg/bg)
+				style = style.Reverse(true)
+			} else {
+				// Apply foreground color
+				if fg := colorToLipgloss(glyph.FG); fg != "" {
+					style = style.Foreground(lipgloss.Color(fg))
+				}
+
+				// Apply background color
+				if bg := colorToLipgloss(glyph.BG); bg != "" {
+					style = style.Background(lipgloss.Color(bg))
+				}
+
+				// Apply text attributes from glyph Mode
+				if glyph.Mode&0x01 != 0 { // attrReverse
+					style = style.Reverse(true)
+				}
+				if glyph.Mode&0x02 != 0 { // attrUnderline
+					style = style.Underline(true)
+				}
+				if glyph.Mode&0x04 != 0 { // attrBold
+					style = style.Bold(true)
+				}
+				if glyph.Mode&0x10 != 0 { // attrItalic
+					style = style.Italic(true)
+				}
 			}
 
 			// Render the character with style
