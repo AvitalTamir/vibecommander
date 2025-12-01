@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/avitaltamir/vibecommander/internal/components/content"
@@ -16,12 +18,19 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/fsnotify/fsnotify"
 )
 
 // GitStatusMsg carries updated git status
 type GitStatusMsg struct {
 	Status *git.Status
 	IsRepo bool
+}
+
+// FileChangeMsg is sent when the file system changes
+type FileChangeMsg struct {
+	Path string
+	Op   fsnotify.Op
 }
 
 // Model is the root application model.
@@ -50,6 +59,9 @@ type Model struct {
 	isGitRepo   bool
 	workDir     string
 
+	// File watcher
+	watcher *fsnotify.Watcher
+
 	// Window dimensions
 	width  int
 	height int
@@ -65,6 +77,9 @@ func New() Model {
 	workDir, _ := os.Getwd()
 	gitProvider := git.NewShellProvider(workDir)
 
+	// Create file watcher
+	watcher, _ := fsnotify.NewWatcher()
+
 	return Model{
 		fileTree:    ft,
 		content:     content.New(),
@@ -76,17 +91,96 @@ func New() Model {
 		gitProvider: gitProvider,
 		workDir:     workDir,
 		isGitRepo:   gitProvider.IsRepo(),
+		watcher:     watcher,
 	}
 }
 
 // Init initializes the application.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		m.fileTree.Init(),
 		m.content.Init(),
 		m.miniBuffer.Init(),
 		m.refreshGitStatus(),
-	)
+	}
+
+	// Start file watcher
+	if m.watcher != nil && m.workDir != "" {
+		// Recursively watch directories (with exclusions)
+		m.addWatchRecursive(m.workDir)
+		cmds = append(cmds, m.watchFilesCmd())
+	}
+
+	return tea.Batch(cmds...)
+}
+
+// addWatchRecursive adds watches for a directory and its subdirectories
+func (m Model) addWatchRecursive(root string) {
+	if m.watcher == nil {
+		return
+	}
+
+	// Directories to skip
+	skipDirs := map[string]bool{
+		".git":         true,
+		"node_modules": true,
+		"vendor":       true,
+		".venv":        true,
+		"__pycache__":  true,
+		".cache":       true,
+		"dist":         true,
+		"build":        true,
+	}
+
+	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip errors
+		}
+
+		if info.IsDir() {
+			// Check if this directory should be skipped
+			name := info.Name()
+			if skipDirs[name] {
+				return filepath.SkipDir
+			}
+
+			// Skip hidden directories (except root)
+			if path != root && strings.HasPrefix(name, ".") {
+				return filepath.SkipDir
+			}
+
+			// Add watch for this directory
+			m.watcher.Add(path)
+		}
+		return nil
+	})
+}
+
+// watchFilesCmd returns a command that listens for file system changes
+func (m Model) watchFilesCmd() tea.Cmd {
+	return func() tea.Msg {
+		if m.watcher == nil {
+			// No watcher, use a ticker to retry later
+			time.Sleep(500 * time.Millisecond)
+			return FileChangeMsg{} // Empty msg will restart watch
+		}
+
+		select {
+		case event, ok := <-m.watcher.Events:
+			if !ok {
+				// Channel closed, sleep and retry
+				time.Sleep(500 * time.Millisecond)
+				return FileChangeMsg{}
+			}
+			return FileChangeMsg{Path: event.Name, Op: event.Op}
+		case <-m.watcher.Errors:
+			// Ignore errors but continue watching
+			return FileChangeMsg{}
+		case <-time.After(5 * time.Second):
+			// Periodic timeout to ensure watch stays alive
+			return FileChangeMsg{}
+		}
+	}
 }
 
 // refreshGitStatus fetches the current git status
@@ -136,6 +230,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case gitTickMsg:
 		return m, m.refreshGitStatus()
+
+	case FileChangeMsg:
+		// Always continue watching for more events
+		cmds = append(cmds, m.watchFilesCmd())
+
+		// Skip empty messages (from error handling)
+		if msg.Path == "" {
+			return m, tea.Batch(cmds...)
+		}
+
+		// If a new directory was created, add a watch for it
+		if msg.Op&fsnotify.Create != 0 {
+			if info, err := os.Stat(msg.Path); err == nil && info.IsDir() {
+				name := filepath.Base(msg.Path)
+				if !strings.HasPrefix(name, ".") && name != "node_modules" && name != "vendor" {
+					m.watcher.Add(msg.Path)
+				}
+			}
+		}
+
+		// Skip .git internal files for tree refresh
+		if strings.Contains(msg.Path, string(filepath.Separator)+".git"+string(filepath.Separator)) {
+			return m, tea.Batch(cmds...)
+		}
+
+		// Refresh the directory containing the changed file
+		dirPath := filepath.Dir(msg.Path)
+		if cmd := m.fileTree.RefreshDir(dirPath); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+
+		// Refresh git status
+		cmds = append(cmds, m.refreshGitStatus())
+		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
 		// Handle quit dialog first
@@ -266,15 +394,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case terminal.OutputMsg, terminal.ExitMsg:
 		// Route to content pane (for AI terminal)
+		// Note: content.Update already calls ContinueReading() when needed
 		var cmd tea.Cmd
 		m.content, cmd = m.content.Update(msg)
 		cmds = append(cmds, cmd)
-		// Continue reading output if terminal is still running
-		if m.content.Mode() == content.ModeAI {
-			cmds = append(cmds, func() tea.Msg {
-				return terminal.OutputMsg{} // Trigger continue reading
-			})
-		}
 		return m, tea.Batch(cmds...)
 	}
 

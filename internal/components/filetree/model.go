@@ -143,19 +143,22 @@ func (m Model) Init() tea.Cmd {
 
 // Update handles messages.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
-	if !m.Focused() {
-		return m, nil
-	}
-
 	switch msg := msg.(type) {
+	// LoadedMsg should always be handled regardless of focus
+	case LoadedMsg:
+		return m.handleLoaded(msg)
+
 	case tea.KeyMsg:
+		if !m.Focused() {
+			return m, nil
+		}
 		return m.handleKey(msg)
 
 	case tea.MouseMsg:
+		if !m.Focused() {
+			return m, nil
+		}
 		return m.handleMouse(msg)
-
-	case LoadedMsg:
-		return m.handleLoaded(msg)
 	}
 
 	return m, nil
@@ -594,6 +597,63 @@ func (m Model) SelectedNode() *Node {
 func (m *Model) SetShowHidden(show bool) {
 	m.showHidden = show
 	m.rebuildVisible()
+}
+
+// RefreshDir triggers a reload of the specified directory.
+// If the path is a file, it refreshes the parent directory.
+func (m Model) RefreshDir(path string) tea.Cmd {
+	if m.root == nil {
+		return nil
+	}
+
+	// Normalize the path
+	path = filepath.Clean(path)
+
+	// Get the directory to refresh (parent if path is a file)
+	dirPath := path
+	if info, err := os.Stat(path); err != nil || !info.IsDir() {
+		// Path doesn't exist or is a file - use parent directory
+		dirPath = filepath.Dir(path)
+	}
+
+	// Check if it's the root directory itself
+	if dirPath == m.root.Path {
+		if m.root.Loaded {
+			return m.loadChildren(m.root.Path)
+		}
+		return nil
+	}
+
+	// Find the directory node in our tree
+	node := m.root.FindByPath(dirPath)
+
+	// If not found but it's within our root, try to refresh root
+	if node == nil {
+		// Check if the path is under our root
+		if rel, err := filepath.Rel(m.root.Path, dirPath); err == nil && !filepath.IsAbs(rel) && !strings.HasPrefix(rel, "..") {
+			// Path is under root, refresh root
+			if m.root.Loaded {
+				return m.loadChildren(m.root.Path)
+			}
+		}
+		return nil
+	}
+
+	// If node is a file, get its parent
+	if !node.IsDir {
+		if node.Parent != nil {
+			node = node.Parent
+		} else {
+			return nil
+		}
+	}
+
+	// Reload if the directory has been loaded before
+	if node.Loaded {
+		return m.loadChildren(node.Path)
+	}
+
+	return nil
 }
 
 // ShowHidden returns whether hidden files are shown.
