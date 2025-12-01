@@ -1,35 +1,44 @@
 package minibuffer
 
 import (
-	"bytes"
+	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/theme"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/creack/pty"
+	"github.com/hinshun/vt10x"
 )
 
-// CommandResultMsg is sent when a command finishes executing.
-type CommandResultMsg struct {
-	Output string
-	Err    error
-}
+// Messages
+type (
+	// OutputMsg contains output from the terminal.
+	OutputMsg struct {
+		Data []byte
+	}
 
-// Model is the mini buffer component for running shell commands.
+	// ExitMsg is sent when the terminal process exits.
+	ExitMsg struct {
+		Err error
+	}
+)
+
+// Model is the mini buffer component with a proper PTY shell.
 type Model struct {
 	components.Base
 
-	input    textinput.Model
-	output   viewport.Model
-	history  []string
-	histIdx  int
-	lastCmd  string
-	running  bool
-	cwd      string
+	vt      vt10x.Terminal
+	cmd     *exec.Cmd
+	pty     *os.File
+	mu      sync.Mutex
+	running bool
+	exitErr error
 
 	theme *theme.Theme
 	ready bool
@@ -37,224 +46,338 @@ type Model struct {
 
 // New creates a new mini buffer model.
 func New() Model {
-	ti := textinput.New()
-	ti.Placeholder = "Enter command..."
-	ti.Prompt = "❯ "
-	ti.CharLimit = 256
-	ti.Width = 80
-
 	return Model{
-		input:   ti,
-		history: make([]string, 0),
-		histIdx: -1,
-		theme:   theme.DefaultTheme(),
+		theme: theme.DefaultTheme(),
 	}
 }
 
 // Init initializes the mini buffer.
 func (m Model) Init() tea.Cmd {
-	return textinput.Blink
+	return nil
 }
+
+// StartShell starts a shell in the terminal.
+func (m Model) StartShell() tea.Cmd {
+	return func() tea.Msg {
+		return startShellMsg{}
+	}
+}
+
+type startShellMsg struct{}
 
 // Update handles messages.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case startShellMsg:
+		if m.running {
+			return m, nil
+		}
+		return m.startProcess()
+
+	case OutputMsg:
+		m.mu.Lock()
+		if m.vt != nil {
+			m.vt.Write(msg.Data)
+		}
+		m.mu.Unlock()
+		// Continue reading
+		if m.running && m.pty != nil {
+			cmds = append(cmds, m.readOutput())
+		}
+		return m, tea.Batch(cmds...)
+
+	case ExitMsg:
+		m.mu.Lock()
+		m.running = false
+		m.exitErr = msg.Err
+		if m.pty != nil {
+			m.pty.Close()
+			m.pty = nil
+		}
+		m.cmd = nil
+		m.mu.Unlock()
+		// Restart shell
+		return m, m.StartShell()
+
 	case tea.KeyMsg:
 		if !m.Focused() {
 			return m, nil
 		}
 
-		switch msg.Type {
-		case tea.KeyEnter:
-			if m.running {
-				return m, nil
-			}
-			cmd := strings.TrimSpace(m.input.Value())
-			if cmd != "" {
-				m.lastCmd = cmd
-				m.history = append(m.history, cmd)
-				m.histIdx = len(m.history)
-				m.input.SetValue("")
-				m.running = true
-				return m, m.executeCommand(cmd)
+		// Send input to PTY if running
+		if m.running && m.pty != nil {
+			var input []byte
+
+			switch msg.Type {
+			case tea.KeyEnter:
+				input = []byte("\r")
+			case tea.KeyBackspace:
+				if msg.Alt {
+					input = []byte{27, 127} // ESC + DEL for Alt+Backspace (delete word)
+				} else {
+					input = []byte{127}
+				}
+			case tea.KeyTab:
+				input = []byte("\t")
+			case tea.KeySpace:
+				input = []byte(" ")
+			case tea.KeyCtrlA:
+				input = []byte{1}
+			case tea.KeyCtrlB:
+				input = []byte{2}
+			case tea.KeyCtrlC:
+				input = []byte{3}
+			case tea.KeyCtrlD:
+				input = []byte{4}
+			case tea.KeyCtrlE:
+				input = []byte{5}
+			case tea.KeyCtrlF:
+				input = []byte{6}
+			case tea.KeyCtrlG:
+				input = []byte{7}
+			case tea.KeyCtrlJ:
+				input = []byte{10}
+			case tea.KeyCtrlK:
+				input = []byte{11}
+			case tea.KeyCtrlL:
+				input = []byte{12}
+			case tea.KeyCtrlN:
+				input = []byte{14}
+			case tea.KeyCtrlO:
+				input = []byte{15}
+			case tea.KeyCtrlP:
+				input = []byte{16}
+			case tea.KeyCtrlR:
+				input = []byte{18}
+			case tea.KeyCtrlS:
+				input = []byte{19}
+			case tea.KeyCtrlT:
+				input = []byte{20}
+			case tea.KeyCtrlU:
+				input = []byte{21}
+			case tea.KeyCtrlV:
+				input = []byte{22}
+			case tea.KeyCtrlW:
+				input = []byte{23}
+			case tea.KeyCtrlX:
+				input = []byte{24}
+			case tea.KeyCtrlY:
+				input = []byte{25}
+			case tea.KeyCtrlZ:
+				input = []byte{26}
+			case tea.KeyUp:
+				input = []byte("\x1b[A")
+			case tea.KeyDown:
+				input = []byte("\x1b[B")
+			case tea.KeyRight:
+				input = []byte("\x1b[C")
+			case tea.KeyLeft:
+				input = []byte("\x1b[D")
+			case tea.KeyEscape:
+				input = []byte{27}
+			case tea.KeyRunes:
+				if msg.Alt {
+					for _, r := range msg.Runes {
+						input = append(input, 27)
+						input = append(input, byte(r))
+					}
+				} else {
+					input = []byte(string(msg.Runes))
+				}
+			case tea.KeyHome:
+				input = []byte("\x1b[H")
+			case tea.KeyEnd:
+				input = []byte("\x1b[F")
+			case tea.KeyPgUp:
+				input = []byte("\x1b[5~")
+			case tea.KeyPgDown:
+				input = []byte("\x1b[6~")
+			case tea.KeyDelete:
+				input = []byte("\x1b[3~")
 			}
 
-		case tea.KeyUp:
-			// Navigate history up
-			if len(m.history) > 0 && m.histIdx > 0 {
-				m.histIdx--
-				m.input.SetValue(m.history[m.histIdx])
-				m.input.CursorEnd()
+			if len(input) > 0 {
+				m.pty.Write(input)
 			}
-			return m, nil
-
-		case tea.KeyDown:
-			// Navigate history down
-			if m.histIdx < len(m.history)-1 {
-				m.histIdx++
-				m.input.SetValue(m.history[m.histIdx])
-				m.input.CursorEnd()
-			} else if m.histIdx == len(m.history)-1 {
-				m.histIdx = len(m.history)
-				m.input.SetValue("")
-			}
-			return m, nil
-
-		case tea.KeyCtrlC:
-			// Clear input
-			m.input.SetValue("")
-			return m, nil
-
-		case tea.KeyCtrlL:
-			// Clear output
-			m.output.SetContent("")
 			return m, nil
 		}
-
-		// Pass to text input
-		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
-		cmds = append(cmds, cmd)
-
-	case CommandResultMsg:
-		m.running = false
-		var content string
-		if msg.Err != nil {
-			content = lipgloss.NewStyle().
-				Foreground(theme.NeonRed).
-				Render("Error: " + msg.Err.Error())
-			if msg.Output != "" {
-				content += "\n" + msg.Output
-			}
-		} else {
-			content = msg.Output
-		}
-
-		// Append to existing output
-		existing := m.output.View()
-		if existing != "" {
-			content = existing + "\n" + m.formatCommand(m.lastCmd) + "\n" + content
-		} else {
-			content = m.formatCommand(m.lastCmd) + "\n" + content
-		}
-		m.output.SetContent(content)
-		m.output.GotoBottom()
-
-	case tea.MouseMsg:
-		// Handle mouse for output scrolling
-		var cmd tea.Cmd
-		m.output, cmd = m.output.Update(msg)
-		cmds = append(cmds, cmd)
 	}
 
 	return m, tea.Batch(cmds...)
 }
 
-func (m Model) formatCommand(cmd string) string {
-	return lipgloss.NewStyle().
-		Foreground(theme.MatrixGreen).
-		Bold(true).
-		Render("❯ " + cmd)
+func (m Model) startProcess() (Model, tea.Cmd) {
+	w, h := m.Size()
+	if w <= 0 {
+		w = 80
+	}
+	if h <= 0 {
+		h = 24
+	}
+
+	// Create virtual terminal with current size
+	m.vt = vt10x.New(vt10x.WithSize(w, h))
+
+	// Get user's shell
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+
+	m.cmd = exec.Command(shell)
+	m.cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+
+	// Start PTY
+	ptmx, err := pty.Start(m.cmd)
+	if err != nil {
+		m.vt.Write([]byte("\x1b[31mError starting shell: " + err.Error() + "\x1b[0m\n"))
+		return m, nil
+	}
+
+	m.pty = ptmx
+	m.running = true
+	m.exitErr = nil
+
+	// Set PTY size
+	pty.Setsize(m.pty, &pty.Winsize{
+		Rows: uint16(h),
+		Cols: uint16(w),
+	})
+
+	// Start reading output
+	return m, m.readOutput()
 }
 
-func (m Model) executeCommand(cmd string) tea.Cmd {
+func (m Model) readOutput() tea.Cmd {
 	return func() tea.Msg {
-		// Parse command
-		parts := strings.Fields(cmd)
-		if len(parts) == 0 {
-			return CommandResultMsg{}
+		if m.pty == nil {
+			return nil
 		}
 
-		name := parts[0]
-		args := parts[1:]
-
-		// Handle built-in commands
-		if name == "clear" {
-			return CommandResultMsg{Output: "\033[H\033[2J"}
-		}
-
-		// Execute external command
-		c := exec.Command(name, args...)
-		var stdout, stderr bytes.Buffer
-		c.Stdout = &stdout
-		c.Stderr = &stderr
-
-		err := c.Run()
-
-		output := stdout.String()
-		if stderr.Len() > 0 {
-			if output != "" {
-				output += "\n"
+		buf := make([]byte, 4096)
+		n, err := m.pty.Read(buf)
+		if err != nil {
+			if err == io.EOF {
+				exitErr := m.cmd.Wait()
+				return ExitMsg{Err: exitErr}
 			}
-			output += stderr.String()
+			return ExitMsg{Err: err}
 		}
 
-		// Trim trailing newline
-		output = strings.TrimSuffix(output, "\n")
-
-		return CommandResultMsg{
-			Output: output,
-			Err:    err,
-		}
+		return OutputMsg{Data: buf[:n]}
 	}
 }
 
 // View renders the mini buffer.
 func (m Model) View() string {
 	w, h := m.Size()
-	if w == 0 || h == 0 {
+	if !m.ready || w <= 0 || h <= 0 {
+		return lipgloss.NewStyle().
+			Foreground(theme.MutedLavender).
+			Render("Initializing shell...")
+	}
+
+	// Render the virtual terminal screen
+	if m.vt != nil {
+		return m.renderVT()
+	}
+
+	return lipgloss.NewStyle().
+		Foreground(theme.MutedLavender).
+		Italic(true).
+		Render("Shell ready...")
+}
+
+// renderVT renders the virtual terminal screen buffer with colors
+func (m Model) renderVT() string {
+	if m.vt == nil {
 		return ""
 	}
 
-	// Input line at the bottom
-	inputStyle := lipgloss.NewStyle().
-		Foreground(theme.CyberCyan).
-		Width(w)
+	m.vt.Lock()
+	defer m.vt.Unlock()
 
-	// Output area above input
-	outputHeight := h - 2 // 1 for input, 1 for separator
-	if outputHeight < 0 {
-		outputHeight = 0
+	cols, rows := m.vt.Size()
+	if cols <= 0 || rows <= 0 {
+		return ""
 	}
 
-	outputStyle := lipgloss.NewStyle().
-		Width(w).
-		Height(outputHeight).
-		Foreground(theme.PureWhite)
+	// Get cursor position and visibility
+	cursor := m.vt.Cursor()
+	cursorVisible := m.vt.CursorVisible() && m.Focused()
 
-	// Separator
-	separator := lipgloss.NewStyle().
-		Foreground(theme.DimPurple).
-		Render(strings.Repeat("─", w))
+	var lines []string
+	for row := 0; row < rows; row++ {
+		var line strings.Builder
+		for col := 0; col < cols; col++ {
+			glyph := m.vt.Cell(col, row)
+			ch := glyph.Char
+			if ch == 0 {
+				ch = ' '
+			}
 
-	// Status indicator
-	var status string
-	if m.running {
-		status = lipgloss.NewStyle().
-			Foreground(theme.ElectricYellow).
-			Render(" ⟳ running...")
+			// Build style with foreground and background colors
+			style := lipgloss.NewStyle()
+
+			// Check if this is the cursor position
+			isCursor := cursorVisible && col == cursor.X && row == cursor.Y
+
+			if isCursor {
+				style = style.Reverse(true)
+			} else {
+				if fg := colorToLipgloss(glyph.FG); fg != "" {
+					style = style.Foreground(lipgloss.Color(fg))
+				}
+				if bg := colorToLipgloss(glyph.BG); bg != "" {
+					style = style.Background(lipgloss.Color(bg))
+				}
+				if glyph.Mode&0x01 != 0 {
+					style = style.Reverse(true)
+				}
+				if glyph.Mode&0x02 != 0 {
+					style = style.Underline(true)
+				}
+				if glyph.Mode&0x04 != 0 {
+					style = style.Bold(true)
+				}
+				if glyph.Mode&0x10 != 0 {
+					style = style.Italic(true)
+				}
+			}
+
+			line.WriteString(style.Render(string(ch)))
+		}
+		lines = append(lines, line.String())
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left,
-		outputStyle.Render(m.output.View()),
-		separator,
-		inputStyle.Render(m.input.View()+status),
-	)
+	return strings.Join(lines, "\n")
+}
+
+// colorToLipgloss converts a vt10x color to a lipgloss color string
+func colorToLipgloss(c vt10x.Color) string {
+	if c >= 0x01000000 {
+		return ""
+	}
+	if c < 256 {
+		return fmt.Sprintf("%d", c)
+	}
+	r := (c >> 16) & 0xFF
+	g := (c >> 8) & 0xFF
+	b := c & 0xFF
+	return fmt.Sprintf("#%02x%02x%02x", r, g, b)
 }
 
 // Focus gives focus to this component.
 func (m Model) Focus() Model {
 	m.Base.Focus()
-	m.input.Focus()
 	return m
 }
 
 // Blur removes focus from this component.
 func (m Model) Blur() Model {
 	m.Base.Blur()
-	m.input.Blur()
 	return m
 }
 
@@ -262,32 +385,39 @@ func (m Model) Blur() Model {
 func (m Model) SetSize(width, height int) Model {
 	m.Base.SetSize(width, height)
 
-	m.input.Width = width - 4 // Account for prompt
-
-	// Initialize or resize viewport
-	outputHeight := height - 2
-	if outputHeight < 0 {
-		outputHeight = 0
+	if !m.ready {
+		m.ready = true
 	}
 
-	if !m.ready {
-		m.output = viewport.New(width, outputHeight)
-		m.output.MouseWheelEnabled = true
-		m.ready = true
-	} else {
-		m.output.Width = width
-		m.output.Height = outputHeight
+	// Resize virtual terminal if it exists
+	if m.vt != nil && width > 0 && height > 0 {
+		m.vt.Resize(width, height)
+	}
+
+	// Update PTY size if running
+	if m.running && m.pty != nil && width > 0 && height > 0 {
+		pty.Setsize(m.pty, &pty.Winsize{
+			Rows: uint16(height),
+			Cols: uint16(width),
+		})
 	}
 
 	return m
 }
 
-// Clear clears the output.
-func (m *Model) Clear() {
-	m.output.SetContent("")
+// Running returns whether the shell is running.
+func (m Model) Running() bool {
+	return m.running
 }
 
-// SetCwd sets the current working directory for commands.
-func (m *Model) SetCwd(cwd string) {
-	m.cwd = cwd
+// Stop stops the running shell.
+func (m *Model) Stop() {
+	if m.cmd != nil && m.cmd.Process != nil {
+		m.cmd.Process.Kill()
+	}
+	if m.pty != nil {
+		m.pty.Close()
+		m.pty = nil
+	}
+	m.running = false
 }

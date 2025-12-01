@@ -55,7 +55,7 @@ func Calculate(width, height int, miniVisible bool) Layout {
 	// Calculate vertical split
 	if miniVisible {
 		l.MiniHeight = max(availableHeight*MiniBufferPercent/100, MinPanelHeight)
-		l.MainHeight = max(availableHeight-l.MiniHeight, MinPanelHeight)
+		l.MainHeight = max(availableHeight-l.MiniHeight-1, MinPanelHeight)
 	} else {
 		l.MiniHeight = 0
 		l.MainHeight = availableHeight

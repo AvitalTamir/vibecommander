@@ -45,6 +45,7 @@ type Model struct {
 	focus       PanelID
 	prevFocus   PanelID
 	miniVisible bool
+	fullscreen  PanelID // Which panel is fullscreen (0 = none)
 	showHelp    bool
 	showQuit    bool // Quit confirmation dialog
 
@@ -288,31 +289,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showHelp = !m.showHelp
 			return m, nil
 
-		case key.Matches(msg, m.keys.FocusNext):
-			if m.showHelp {
-				m.showHelp = false
-				return m, nil
+		case key.Matches(msg, m.keys.FocusTree):
+			// Exit fullscreen if in fullscreen mode
+			if m.fullscreen != 0 {
+				m.fullscreen = 0
+				m = m.updateSizes()
 			}
-			m = m.cycleFocus(1)
+			// Close mini buffer if open
+			if m.miniVisible {
+				m.miniVisible = false
+				m.layout = layout.Calculate(m.width, m.height, m.miniVisible)
+				m = m.updateSizes()
+			}
+			m = m.setFocus(PanelFileTree)
 			return m, nil
 
-		case key.Matches(msg, m.keys.FocusPrev):
-			if m.showHelp {
-				m.showHelp = false
-				return m, nil
+		case key.Matches(msg, m.keys.FocusContent):
+			// Exit fullscreen if in fullscreen mode
+			if m.fullscreen != 0 {
+				m.fullscreen = 0
+				m = m.updateSizes()
 			}
-			m = m.cycleFocus(-1)
+			// Close mini buffer if open
+			if m.miniVisible {
+				m.miniVisible = false
+				m.layout = layout.Calculate(m.width, m.height, m.miniVisible)
+				m = m.updateSizes()
+			}
+			// Toggle fullscreen if already focused
+			if m.focus == PanelContent {
+				m.fullscreen = PanelContent
+				m = m.updateSizes()
+			}
+			m = m.setFocus(PanelContent)
 			return m, nil
 
 		case key.Matches(msg, m.keys.ToggleMini):
+			// Exit fullscreen if in fullscreen mode
+			if m.fullscreen != 0 {
+				m.fullscreen = 0
+				m = m.updateSizes()
+			}
+			// Always toggle terminal on/off
 			m.miniVisible = !m.miniVisible
 			m.layout = layout.Calculate(m.width, m.height, m.miniVisible)
 			m = m.updateSizes()
 			if m.miniVisible {
-				// Focus the mini buffer when opening
 				m = m.setFocus(PanelMiniBuffer)
+				// Start shell if not running
+				if !m.miniBuffer.Running() {
+					return m, m.miniBuffer.StartShell()
+				}
 			} else {
-				// Return focus to previous panel when closing
 				m = m.setFocus(m.prevFocus)
 			}
 			return m, nil
@@ -378,8 +406,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 		return m, tea.Batch(cmds...)
 
-	case minibuffer.CommandResultMsg:
-		// Route to mini buffer
+	case minibuffer.OutputMsg, minibuffer.ExitMsg:
+		// Route to mini buffer (for shell terminal)
 		var cmd tea.Cmd
 		m.miniBuffer, cmd = m.miniBuffer.Update(msg)
 		cmds = append(cmds, cmd)
@@ -412,6 +440,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateSizes updates the size of all child components.
 func (m Model) updateSizes() Model {
+	// Handle fullscreen mode (content only)
+	if m.fullscreen == PanelContent {
+		fullWidth := m.width - 2
+		fullHeight := m.height - 1 - 2 // minus status bar and borders
+		if fullWidth < 0 {
+			fullWidth = 0
+		}
+		if fullHeight < 0 {
+			fullHeight = 0
+		}
+		m.content = m.content.SetSize(fullWidth, fullHeight)
+		return m
+	}
+
 	// Account for borders
 	leftWidth := m.layout.LeftWidth - 2
 	rightWidth := m.layout.RightWidth - 2
@@ -468,23 +510,32 @@ func (m Model) View() string {
 		return "Initializing..."
 	}
 
-	// Render panels
-	leftPanel := m.renderLeftPanel()
-	rightPanel := m.renderRightPanel()
+	var view string
 
-	// Join horizontally
-	mainArea := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+	// Handle fullscreen mode (content only)
+	if m.fullscreen == PanelContent {
+		statusBar := m.renderStatusBar()
+		panel := m.renderFullscreenPanel(m.content.View(), "", true)
+		view = lipgloss.JoinVertical(lipgloss.Left, panel, statusBar)
+	} else {
+		// Render panels
+		leftPanel := m.renderLeftPanel()
+		rightPanel := m.renderRightPanel()
 
-	// Add mini buffer if visible
-	if m.miniVisible {
-		miniPanel := m.renderMiniBuffer()
-		mainArea = lipgloss.JoinVertical(lipgloss.Left, mainArea, miniPanel)
+		// Join horizontally
+		mainArea := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+
+		// Add mini buffer if visible
+		if m.miniVisible {
+			miniPanel := m.renderMiniBuffer()
+			mainArea = lipgloss.JoinVertical(lipgloss.Left, mainArea, miniPanel)
+		}
+
+		// Add status bar
+		statusBar := m.renderStatusBar()
+
+		view = lipgloss.JoinVertical(lipgloss.Left, mainArea, statusBar)
 	}
-
-	// Add status bar
-	statusBar := m.renderStatusBar()
-
-	view := lipgloss.JoinVertical(lipgloss.Left, mainArea, statusBar)
 
 	// Show help overlay if active
 	if m.showHelp {
@@ -534,6 +585,24 @@ func (m Model) renderMiniBuffer() string {
 		title,
 		m.miniBuffer.View(),
 	))
+}
+
+// renderFullscreenPanel renders a panel in fullscreen mode.
+func (m Model) renderFullscreenPanel(content string, title string, focused bool) string {
+	// Use full width and height minus status bar
+	fullHeight := m.height - 1
+	style := theme.GetPanelStyle(focused).
+		Width(m.width - 2).
+		Height(fullHeight - 2)
+
+	if title != "" {
+		titleBar := theme.RenderTitle(title, focused)
+		return style.Render(lipgloss.JoinVertical(lipgloss.Left,
+			titleBar,
+			content,
+		))
+	}
+	return style.Render(content)
 }
 
 // renderStatusBar renders the status bar.
@@ -642,25 +711,6 @@ func (m Model) setFocus(target PanelID) Model {
 	return m
 }
 
-// cycleFocus cycles focus between panels.
-func (m Model) cycleFocus(direction int) Model {
-	panels := []PanelID{PanelFileTree, PanelContent}
-	if m.miniVisible {
-		panels = append(panels, PanelMiniBuffer)
-	}
-
-	currentIdx := 0
-	for i, p := range panels {
-		if p == m.focus {
-			currentIdx = i
-			break
-		}
-	}
-
-	newIdx := (currentIdx + direction + len(panels)) % len(panels)
-	return m.setFocus(panels[newIdx])
-}
-
 // Focus returns the currently focused panel.
 func (m Model) Focus() PanelID {
 	return m.focus
@@ -687,12 +737,12 @@ func (m Model) renderHelpOverlay(_ string) string {
 		"║    End/G         Go to bottom                            ║",
 		"║                                                          ║",
 		"║  PANELS                                                  ║",
-		"║    Tab           Next panel                              ║",
-		"║    Shift+Tab     Previous panel                          ║",
-		"║    ` or Ctrl+T   Toggle terminal                         ║",
+		"║    Alt+1         Focus file tree                           ║",
+		"║    Alt+2         Focus content (2x = fullscreen)         ║",
+		"║    Alt+3         Toggle terminal                         ║",
 		"║                                                          ║",
 		"║  ACTIONS                                                 ║",
-		"║    Ctrl+A        Launch AI assistant                     ║",
+		"║    Alt+A         Launch AI assistant                      ║",
 		"║    Ctrl+H        Toggle this help                        ║",
 		"║    Ctrl+Q        Quit                                    ║",
 		"║                                                          ║",

@@ -5,11 +5,11 @@ import "github.com/charmbracelet/bubbles/key"
 // KeyMap defines the key bindings for the application.
 type KeyMap struct {
 	// Global keys
-	Quit        key.Binding
-	Help        key.Binding
-	FocusNext   key.Binding
-	FocusPrev   key.Binding
-	ToggleMini  key.Binding
+	Quit         key.Binding
+	Help         key.Binding
+	FocusTree    key.Binding
+	FocusContent key.Binding
+	ToggleMini   key.Binding
 
 	// Navigation
 	Up       key.Binding
@@ -42,17 +42,17 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("ctrl+h"),
 			key.WithHelp("ctrl+h", "help"),
 		),
-		FocusNext: key.NewBinding(
-			key.WithKeys("tab"),
-			key.WithHelp("tab", "next panel"),
+		FocusTree: key.NewBinding(
+			key.WithKeys("alt+1"),
+			key.WithHelp("M-1", "focus tree"),
 		),
-		FocusPrev: key.NewBinding(
-			key.WithKeys("shift+tab"),
-			key.WithHelp("shift+tab", "prev panel"),
+		FocusContent: key.NewBinding(
+			key.WithKeys("alt+2"),
+			key.WithHelp("M-2", "focus content"),
 		),
 		ToggleMini: key.NewBinding(
-			key.WithKeys("`", "ctrl+t"),
-			key.WithHelp("`", "toggle terminal"),
+			key.WithKeys("alt+3"),
+			key.WithHelp("M-3", "toggle terminal"),
 		),
 
 		// Navigation
@@ -105,15 +105,15 @@ func DefaultKeyMap() KeyMap {
 
 		// AI
 		LaunchAI: key.NewBinding(
-			key.WithKeys("ctrl+a"),
-			key.WithHelp("ctrl+a", "launch AI"),
+			key.WithKeys("alt+a"),
+			key.WithHelp("M-a", "launch AI"),
 		),
 	}
 }
 
 // ShortHelp returns the short help text for the key map.
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Help, k.Quit, k.FocusNext, k.Enter}
+	return []key.Binding{k.Help, k.Quit, k.FocusTree, k.Enter}
 }
 
 // FullHelp returns the full help text for the key map.
@@ -122,7 +122,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.Left, k.Right},
 		{k.PageUp, k.PageDown, k.Home, k.End},
 		{k.Enter, k.Back, k.Delete},
-		{k.FocusNext, k.FocusPrev, k.ToggleMini},
+		{k.FocusTree, k.FocusContent, k.ToggleMini},
 		{k.LaunchAI, k.Help, k.Quit},
 	}
 }
