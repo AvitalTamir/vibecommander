@@ -40,6 +40,12 @@ type Model struct {
 	running bool
 	exitErr error
 
+	// Scrollback
+	scrollback    []string // Lines that scrolled off the top
+	scrollOffset  int      // 0 = live view, >0 = scrolled up N lines
+	maxScrollback int      // Max lines to keep
+	lastTopLine   string   // Track changes to detect scroll
+
 	theme *theme.Theme
 	ready bool
 }
@@ -47,7 +53,8 @@ type Model struct {
 // New creates a new mini buffer model.
 func New() Model {
 	return Model{
-		theme: theme.DefaultTheme(),
+		theme:         theme.DefaultTheme(),
+		maxScrollback: 10000,
 	}
 }
 
@@ -79,7 +86,49 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case OutputMsg:
 		m.mu.Lock()
 		if m.vt != nil {
+			cols, rows := m.vt.Size()
+
+			// Capture all screen lines before write (both plain text and rendered)
+			oldPlainLines := make([]string, rows)
+			oldRenderedLines := make([]string, rows)
+			for row := 0; row < rows; row++ {
+				oldPlainLines[row] = m.getScreenLinePlain(cols, row)
+				oldRenderedLines[row] = m.renderScreenLine(cols, row)
+			}
+
 			m.vt.Write(msg.Data)
+
+			// Get new top line to detect scroll amount
+			newTopLine := m.getScreenLinePlain(cols, 0)
+
+			// Find where the new top line was in the old screen
+			scrollAmount := -1 // -1 means not found (entire screen scrolled)
+			for i := 0; i < rows; i++ {
+				if oldPlainLines[i] == newTopLine {
+					scrollAmount = i
+					break
+				}
+			}
+
+			// Add scrolled lines to scrollback
+			if scrollAmount == -1 {
+				// Entire screen scrolled off - save all non-empty old lines
+				for i := 0; i < rows; i++ {
+					if oldPlainLines[i] != "" {
+						m.scrollback = append(m.scrollback, oldRenderedLines[i])
+					}
+				}
+			} else if scrollAmount > 0 {
+				// Partial scroll - save lines that scrolled off
+				for i := 0; i < scrollAmount; i++ {
+					m.scrollback = append(m.scrollback, oldRenderedLines[i])
+				}
+			}
+
+			// Trim scrollback if too large
+			if len(m.scrollback) > m.maxScrollback {
+				m.scrollback = m.scrollback[len(m.scrollback)-m.maxScrollback:]
+			}
 		}
 		m.mu.Unlock()
 		// Continue reading
@@ -100,6 +149,27 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.mu.Unlock()
 		// Restart shell
 		return m, m.StartShell()
+
+	case tea.MouseMsg:
+		// Handle mouse scroll for scrollback buffer
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			// Scroll up (into history)
+			maxScroll := len(m.scrollback)
+			m.scrollOffset += 3
+			if m.scrollOffset > maxScroll {
+				m.scrollOffset = maxScroll
+			}
+			return m, nil
+		case tea.MouseButtonWheelDown:
+			// Scroll down (toward live)
+			m.scrollOffset -= 3
+			if m.scrollOffset < 0 {
+				m.scrollOffset = 0
+			}
+			return m, nil
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		if !m.Focused() {
@@ -178,13 +248,18 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			case tea.KeyEscape:
 				input = []byte{27}
 			case tea.KeyRunes:
+				// Filter out mouse/escape sequence fragments
+				runeStr := string(msg.Runes)
+				if looksLikeMouseSequence(runeStr) || looksLikeEscapeFragment(runeStr) {
+					return m, nil
+				}
 				if msg.Alt {
 					for _, r := range msg.Runes {
 						input = append(input, 27)
 						input = append(input, byte(r))
 					}
 				} else {
-					input = []byte(string(msg.Runes))
+					input = []byte(runeStr)
 				}
 			case tea.KeyHome:
 				input = []byte("\x1b[H")
@@ -256,7 +331,8 @@ func (m Model) readOutput() tea.Cmd {
 			return nil
 		}
 
-		buf := make([]byte, 4096)
+		// Smaller buffer to capture scrollback more frequently
+		buf := make([]byte, 128)
 		n, err := m.pty.Read(buf)
 		if err != nil {
 			if err == io.EOF {
@@ -305,19 +381,28 @@ func (m Model) renderVT() string {
 		return ""
 	}
 
-	// Get cursor position and visibility
+	// If scrolled up, show scrollback + partial screen
+	if m.scrollOffset > 0 && len(m.scrollback) > 0 {
+		return m.renderWithScrollback(cols, rows)
+	}
+
+	// Live view - render current vt screen
+	return m.renderLiveScreen(cols, rows)
+}
+
+// renderLiveScreen renders the current vt10x screen (no scrollback)
+func (m Model) renderLiveScreen(cols, rows int) string {
 	cursor := m.vt.Cursor()
 	cursorVisible := m.vt.CursorVisible() && m.Focused()
 
 	var result strings.Builder
-	result.Grow(rows * cols * 2) // Pre-allocate
+	result.Grow(rows * cols * 2)
 
 	for row := 0; row < rows; row++ {
 		if row > 0 {
 			result.WriteByte('\n')
 		}
 
-		// Track current style to batch characters
 		var currentFG, currentBG vt10x.Color
 		var currentMode int16
 		var currentIsCursor bool
@@ -328,10 +413,9 @@ func (m Model) renderVT() string {
 			if batch.Len() == 0 {
 				return
 			}
-			// Write ANSI codes for the batch
 			result.WriteString(buildANSI(currentFG, currentBG, currentMode, currentIsCursor))
 			result.WriteString(batch.String())
-			result.WriteString("\x1b[0m") // Reset
+			result.WriteString("\x1b[0m")
 			batch.Reset()
 		}
 
@@ -344,7 +428,6 @@ func (m Model) renderVT() string {
 
 			isCursor := cursorVisible && col == cursor.X && row == cursor.Y
 
-			// Check if style changed
 			if !firstCell && (glyph.FG != currentFG || glyph.BG != currentBG || glyph.Mode != currentMode || isCursor != currentIsCursor) {
 				flushBatch()
 			}
@@ -361,6 +444,144 @@ func (m Model) renderVT() string {
 	}
 
 	return result.String()
+}
+
+// renderWithScrollback renders view including scrollback history
+func (m Model) renderWithScrollback(cols, rows int) string {
+	var lines []string
+
+	// Calculate which lines to show
+	scrollbackLen := len(m.scrollback)
+	startIdx := scrollbackLen - m.scrollOffset
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
+	// Add scrollback lines
+	for i := startIdx; i < scrollbackLen && len(lines) < rows; i++ {
+		lines = append(lines, m.scrollback[i])
+	}
+
+	// Add current screen lines if we have room
+	if len(lines) < rows {
+		screenRows := rows - len(lines)
+		for row := 0; row < screenRows; row++ {
+			lines = append(lines, m.renderScreenLine(cols, row))
+		}
+	}
+
+	// Pad with empty lines if needed
+	for len(lines) < rows {
+		lines = append(lines, strings.Repeat(" ", cols))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// renderScreenLine renders a single line from the vt screen
+func (m Model) renderScreenLine(cols, row int) string {
+	var result strings.Builder
+	var currentFG, currentBG vt10x.Color
+	var currentMode int16
+	var batch strings.Builder
+	firstCell := true
+
+	flushBatch := func() {
+		if batch.Len() == 0 {
+			return
+		}
+		result.WriteString(buildANSI(currentFG, currentBG, currentMode, false))
+		result.WriteString(batch.String())
+		result.WriteString("\x1b[0m")
+		batch.Reset()
+	}
+
+	for col := 0; col < cols; col++ {
+		glyph := m.vt.Cell(col, row)
+		ch := glyph.Char
+		if ch == 0 {
+			ch = ' '
+		}
+
+		if !firstCell && (glyph.FG != currentFG || glyph.BG != currentBG || glyph.Mode != currentMode) {
+			flushBatch()
+		}
+
+		currentFG = glyph.FG
+		currentBG = glyph.BG
+		currentMode = glyph.Mode
+		firstCell = false
+
+		batch.WriteRune(ch)
+	}
+	flushBatch()
+
+	return result.String()
+}
+
+// getScreenLinePlain returns a screen line as plain text (no ANSI codes) for comparison
+func (m Model) getScreenLinePlain(cols, row int) string {
+	var result strings.Builder
+	for col := 0; col < cols; col++ {
+		ch := m.vt.Cell(col, row).Char
+		if ch == 0 {
+			ch = ' '
+		}
+		result.WriteRune(ch)
+	}
+	return strings.TrimRight(result.String(), " ")
+}
+
+// getTopLine returns the current top line of the terminal as plain text (no ANSI codes)
+func (m Model) getTopLine() string {
+	if m.vt == nil {
+		return ""
+	}
+	cols, _ := m.vt.Size()
+	if cols <= 0 {
+		return ""
+	}
+	return m.getScreenLinePlain(cols, 0)
+}
+
+// looksLikeEscapeFragment returns true if the string looks like a fragment of an escape sequence
+func looksLikeEscapeFragment(s string) bool {
+	// Single [ or < often comes from split escape sequences
+	if s == "[" || s == "<" || s == "[<" {
+		return true
+	}
+	// Sequences starting with [ followed by numbers/semicolons (partial CSI)
+	if len(s) > 0 && s[0] == '[' {
+		for i := 1; i < len(s); i++ {
+			c := s[i]
+			if c != ';' && c != '<' && (c < '0' || c > '9') {
+				return false
+			}
+		}
+		return len(s) > 1
+	}
+	return false
+}
+
+// looksLikeMouseSequence returns true if the string looks like a partial SGR mouse sequence
+// These look like "65;83;57M" or "0;45;12m" - numbers, semicolons, ending with M or m
+func looksLikeMouseSequence(s string) bool {
+	if len(s) < 3 {
+		return false
+	}
+	// Check if it ends with M or m (SGR mouse)
+	last := s[len(s)-1]
+	if last != 'M' && last != 'm' {
+		return false
+	}
+	// Check if the rest is numbers and semicolons
+	for i := 0; i < len(s)-1; i++ {
+		c := s[i]
+		if c != ';' && (c < '0' || c > '9') && c != '<' {
+			return false
+		}
+	}
+	return true
 }
 
 // buildANSI builds ANSI escape sequence for the given style
