@@ -55,10 +55,11 @@ type Model struct {
 	keys   KeyMap
 
 	// Git
-	gitProvider *git.ShellProvider
-	gitStatus   *git.Status
-	isGitRepo   bool
-	workDir     string
+	gitProvider    *git.ShellProvider
+	gitStatus      *git.Status
+	isGitRepo      bool
+	workDir        string
+	gitRefreshTime time.Time // Last git refresh time for debouncing
 
 	// File watcher
 	watcher *fsnotify.Watcher
@@ -107,6 +108,7 @@ func (m Model) Init() tea.Cmd {
 		m.content.Init(),
 		m.miniBuffer.Init(),
 		m.refreshGitStatus(),
+		gitTick(), // Start periodic git status refresh
 	}
 
 	// Start file watcher
@@ -159,6 +161,9 @@ func (m Model) addWatchRecursive(root string) {
 		}
 		return nil
 	})
+
+	// Note: We don't watch .git directory to avoid lock file conflicts.
+	// Git status is refreshed periodically via ticker instead.
 }
 
 // watchFilesCmd returns a command that listens for file system changes
@@ -188,6 +193,12 @@ func (m Model) watchFilesCmd() tea.Cmd {
 	}
 }
 
+// gitDebounceInterval is the minimum time between git refreshes
+const gitDebounceInterval = 1 * time.Second
+
+// gitTickInterval is how often we poll git status
+const gitTickInterval = 2 * time.Second
+
 // refreshGitStatus fetches the current git status
 func (m Model) refreshGitStatus() tea.Cmd {
 	return func() tea.Msg {
@@ -201,7 +212,24 @@ func (m Model) refreshGitStatus() tea.Cmd {
 	}
 }
 
+// refreshGitStatusDebounced only refreshes if enough time has passed since last refresh
+func (m *Model) refreshGitStatusDebounced() tea.Cmd {
+	now := time.Now()
+	if now.Sub(m.gitRefreshTime) < gitDebounceInterval {
+		return nil
+	}
+	m.gitRefreshTime = now
+	return m.refreshGitStatus()
+}
+
 type gitTickMsg struct{}
+
+// gitTick returns a command that sends a gitTickMsg after the tick interval
+func gitTick() tea.Cmd {
+	return tea.Tick(gitTickInterval, func(t time.Time) tea.Msg {
+		return gitTickMsg{}
+	})
+}
 
 // Update handles messages and updates the model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -227,8 +255,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case gitTickMsg:
-		// Legacy - no longer used
-		return m, nil
+		// Periodic git status refresh with debouncing
+		var cmds []tea.Cmd
+		if cmd := m.refreshGitStatusDebounced(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		cmds = append(cmds, gitTick()) // Schedule next tick
+		return m, tea.Batch(cmds...)
 
 	case FileChangeMsg:
 		// Always continue watching for more events
@@ -249,19 +282,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Skip .git internal files for tree refresh
-		if strings.Contains(msg.Path, string(filepath.Separator)+".git"+string(filepath.Separator)) {
-			return m, tea.Batch(cmds...)
-		}
-
 		// Refresh the directory containing the changed file
 		dirPath := filepath.Dir(msg.Path)
 		if cmd := m.fileTree.RefreshDir(dirPath); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 
-		// Refresh git status
-		cmds = append(cmds, m.refreshGitStatus())
+		// Refresh git status (debounced to avoid excessive calls)
+		if cmd := m.refreshGitStatusDebounced(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
@@ -417,11 +447,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 		return m, tea.Batch(cmds...)
 
-	case minibuffer.OutputMsg, minibuffer.ExitMsg:
+	case minibuffer.OutputMsg:
 		// Route to mini buffer (for shell terminal)
 		var cmd tea.Cmd
 		m.miniBuffer, cmd = m.miniBuffer.Update(msg)
 		cmds = append(cmds, cmd)
+		return m, tea.Batch(cmds...)
+
+	case minibuffer.ExitMsg:
+		// Route to mini buffer and refresh git status (command completed)
+		var cmd tea.Cmd
+		m.miniBuffer, cmd = m.miniBuffer.Update(msg)
+		cmds = append(cmds, cmd)
+		// Refresh git status in case a git command was run
+		cmds = append(cmds, m.refreshGitStatus())
 		return m, tea.Batch(cmds...)
 
 	case content.LaunchAIMsg:
