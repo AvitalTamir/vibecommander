@@ -78,12 +78,16 @@ func New() Model {
 	workDir, _ := os.Getwd()
 	gitProvider := git.NewShellProvider(workDir)
 
+	// Create content pane with git provider
+	contentPane := content.New()
+	contentPane.SetGitProvider(gitProvider)
+
 	// Create file watcher
 	watcher, _ := fsnotify.NewWatcher()
 
 	return Model{
 		fileTree:    ft,
-		content:     content.New(),
+		content:     contentPane,
 		miniBuffer:  minibuffer.New(),
 		focus:       PanelFileTree,
 		miniVisible: false,
@@ -407,6 +411,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case viewer.FileLoadedMsg:
 		// Route to content pane
+		var cmd tea.Cmd
+		m.content, cmd = m.content.Update(msg)
+		cmds = append(cmds, cmd)
+		return m, tea.Batch(cmds...)
+
+	case content.FileWithDiffMsg:
+		// Route to content pane (file loaded with diff check)
 		var cmd tea.Cmd
 		m.content, cmd = m.content.Update(msg)
 		cmds = append(cmds, cmd)

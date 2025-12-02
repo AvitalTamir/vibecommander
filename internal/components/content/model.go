@@ -1,11 +1,15 @@
 package content
 
 import (
+	"context"
+	"os"
 	"path/filepath"
 
 	"github.com/avitaltamir/vibecommander/internal/components"
+	"github.com/avitaltamir/vibecommander/internal/components/content/diff"
 	"github.com/avitaltamir/vibecommander/internal/components/content/viewer"
 	"github.com/avitaltamir/vibecommander/internal/components/terminal"
+	"github.com/avitaltamir/vibecommander/internal/git"
 	"github.com/avitaltamir/vibecommander/internal/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -53,6 +57,15 @@ type (
 		Command string   // e.g., "claude"
 		Args    []string // e.g., []string{}
 	}
+
+	// FileWithDiffMsg is sent after checking if a file has a diff.
+	FileWithDiffMsg struct {
+		Path    string
+		Diff    string
+		Content string
+		HasDiff bool
+		Err     error
+	}
 )
 
 // Model is the content pane component that routes between different views.
@@ -62,9 +75,10 @@ type Model struct {
 	mode     Mode
 	viewer   viewer.Model
 	terminal terminal.Model
-	// diff     diff.Model     // Will be added later
+	diff     diff.Model
 
 	currentPath string
+	gitProvider git.Provider
 	theme       *theme.Theme
 }
 
@@ -74,8 +88,14 @@ func New() Model {
 		mode:     ModeViewer,
 		viewer:   viewer.New(),
 		terminal: terminal.New(),
+		diff:     diff.New(),
 		theme:    theme.DefaultTheme(),
 	}
+}
+
+// SetGitProvider sets the git provider for diff functionality.
+func (m *Model) SetGitProvider(provider git.Provider) {
+	m.gitProvider = provider
 }
 
 // Init initializes the content pane.
@@ -93,8 +113,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, nil
 
 	case OpenFileMsg:
-		m.mode = ModeViewer
 		m.currentPath = msg.Path
+		// Check if file has git changes - if so, show diff
+		if m.gitProvider != nil {
+			return m, m.loadFileWithDiffCheck(msg.Path)
+		}
+		m.mode = ModeViewer
 		return m, viewer.LoadFile(msg.Path)
 
 	case LaunchAIMsg:
@@ -116,6 +140,39 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.viewer, cmd = m.viewer.Update(msg)
 		cmds = append(cmds, cmd)
 		return m, tea.Batch(cmds...)
+
+	case diff.DiffLoadedMsg:
+		// Route to diff viewer
+		var cmd tea.Cmd
+		m.diff, cmd = m.diff.Update(msg)
+		cmds = append(cmds, cmd)
+		return m, tea.Batch(cmds...)
+
+	case FileWithDiffMsg:
+		if msg.Err != nil {
+			// Error loading - show in viewer
+			m.mode = ModeViewer
+			var cmd tea.Cmd
+			m.viewer, cmd = m.viewer.Update(viewer.FileLoadedMsg{
+				Path: msg.Path,
+				Err:  msg.Err,
+			})
+			return m, cmd
+		}
+		if msg.HasDiff && msg.Diff != "" {
+			// Show diff view
+			m.mode = ModeDiff
+			m.diff.SetContent(msg.Diff, msg.Path)
+			return m, nil
+		}
+		// No diff - show normal viewer
+		m.mode = ModeViewer
+		var cmd tea.Cmd
+		m.viewer, cmd = m.viewer.Update(viewer.FileLoadedMsg{
+			Path:    msg.Path,
+			Content: msg.Content,
+		})
+		return m, cmd
 
 	case terminal.OutputMsg, terminal.ExitMsg:
 		// Route to terminal and continue reading
@@ -144,7 +201,7 @@ func (m Model) routeMessage(msg tea.Msg) (Model, tea.Cmd) {
 	case ModeViewer:
 		m.viewer, cmd = m.viewer.Update(msg)
 	case ModeDiff:
-		// m.diff, cmd = m.diff.Update(msg)
+		m.diff, cmd = m.diff.Update(msg)
 	case ModeTerminal, ModeAI:
 		m.terminal, cmd = m.terminal.Update(msg)
 	}
@@ -159,10 +216,14 @@ func (m Model) View() string {
 		return ""
 	}
 
-	// Render the title - show filename in viewer mode if file is loaded
+	// Render the title - show filename in viewer/diff mode if file is loaded
 	titleText := m.mode.String()
-	if m.mode == ModeViewer && m.currentPath != "" {
-		titleText = filepath.Base(m.currentPath)
+	if (m.mode == ModeViewer || m.mode == ModeDiff) && m.currentPath != "" {
+		prefix := ""
+		if m.mode == ModeDiff {
+			prefix = "DIFF: "
+		}
+		titleText = prefix + filepath.Base(m.currentPath)
 	}
 	title := theme.RenderTitle(titleText, m.Focused())
 
@@ -174,7 +235,7 @@ func (m Model) View() string {
 	case ModeViewer:
 		content = m.viewer.View()
 	case ModeDiff:
-		content = m.renderPlaceholder("Diff view coming soon...")
+		content = m.diff.View()
 	case ModeTerminal, ModeAI:
 		content = m.terminal.View()
 	}
@@ -224,6 +285,8 @@ func (m Model) Focus() Model {
 	switch m.mode {
 	case ModeViewer:
 		m.viewer = m.viewer.Focus()
+	case ModeDiff:
+		m.diff = m.diff.Focus()
 	case ModeTerminal, ModeAI:
 		m.terminal = m.terminal.Focus()
 	}
@@ -239,6 +302,8 @@ func (m Model) Blur() Model {
 	switch m.mode {
 	case ModeViewer:
 		m.viewer = m.viewer.Blur()
+	case ModeDiff:
+		m.diff = m.diff.Blur()
 	case ModeTerminal, ModeAI:
 		m.terminal = m.terminal.Blur()
 	}
@@ -258,7 +323,7 @@ func (m Model) SetSize(width, height int) Model {
 
 	m.viewer = m.viewer.SetSize(width, contentHeight)
 	m.terminal = m.terminal.SetSize(width, contentHeight)
-	// m.diff = m.diff.SetSize(width, contentHeight)
+	m.diff = m.diff.SetSize(width, contentHeight)
 
 	return m
 }
@@ -268,9 +333,51 @@ func (m Model) ScrollPercent() float64 {
 	switch m.mode {
 	case ModeViewer:
 		return m.viewer.ScrollPercent()
+	case ModeDiff:
+		return m.diff.ScrollPercent()
 	default:
 		return 0
 	}
+}
+
+// loadFileWithDiffCheck loads a file and checks if it has git changes.
+func (m Model) loadFileWithDiffCheck(path string) tea.Cmd {
+	return func() tea.Msg {
+		// Read the file content
+		fileContent, err := readFile(path)
+		if err != nil {
+			return FileWithDiffMsg{Path: path, Err: err}
+		}
+
+		// Check for git diff
+		if m.gitProvider != nil {
+			diffContent, err := m.gitProvider.GetDiff(context.Background(), path)
+			if err == nil && diffContent != "" {
+				return FileWithDiffMsg{
+					Path:    path,
+					Diff:    diffContent,
+					Content: fileContent,
+					HasDiff: true,
+				}
+			}
+		}
+
+		// No diff - return content for normal viewing
+		return FileWithDiffMsg{
+			Path:    path,
+			Content: fileContent,
+			HasDiff: false,
+		}
+	}
+}
+
+// readFile reads a file and returns its content.
+func readFile(path string) (string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
 }
 
 // IsTerminalRunning returns true if the terminal is running a process.
