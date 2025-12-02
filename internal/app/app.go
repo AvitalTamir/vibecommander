@@ -737,7 +737,7 @@ func (m Model) renderHelpOverlay(_ string) string {
 	// Help content
 	helpLines := []string{
 		"╔══════════════════════════════════════════════════════════╗",
-		"║                  VIBE COMMANDER HELP                      ║",
+		"║                  VIBE COMMANDER HELP                     ║",
 		"╠══════════════════════════════════════════════════════════╣",
 		"║  NAVIGATION                                              ║",
 		"║    ↑/k, ↓/j      Move up/down                            ║",

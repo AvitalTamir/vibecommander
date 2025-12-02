@@ -20,8 +20,8 @@ That's a lot of `Cmd+Tab` or terminal tab switching. Vibe Commander puts everyth
 ┌─────────────┬──────────────────────────────────────┐
 │ FILES       │ VIEWER                               │
 │             │                                      │
-│ ├── src/    │ (file contents with syntax          │
-│ │   ├── ... │  highlighting and search)           │
+│ ├── src/    │ (file contents with syntax           │
+│ │   ├── ... │  highlighting and search)            │
 │ │   └── ... │                                      │
 │ └── ...     │                                      │
 ├─────────────┴──────────────────────────────────────┤
