@@ -1,7 +1,7 @@
 .PHONY: all build test lint clean run install
 
 # Binary name
-BINARY_NAME=vibecommander
+BINARY_NAME=vc
 
 # Go parameters
 GOCMD=go
@@ -15,7 +15,7 @@ GOFMT=$(GOCMD) fmt
 BUILD_DIR=./bin
 
 # Main package
-MAIN_PACKAGE=./cmd/vibecommander
+MAIN_PACKAGE=./cmd/vc
 
 all: lint test build
 

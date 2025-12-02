@@ -38,7 +38,7 @@ That's a lot of `Cmd+Tab` or terminal tab switching. Vibe Commander puts everyth
 ## Installation
 
 ```bash
-go install github.com/avitaltamir/vibecommander/cmd/vibecommander@latest
+go install github.com/avitaltamir/vibecommander/cmd/vc@latest
 ```
 
 Or build from source:
@@ -46,7 +46,7 @@ Or build from source:
 ```bash
 git clone https://github.com/avitaltamir/vibecommander.git
 cd vibecommander
-go build -o vibecommander ./cmd/vibecommander
+go build -o vc ./cmd/vc
 ```
 
 ## Keybindings
