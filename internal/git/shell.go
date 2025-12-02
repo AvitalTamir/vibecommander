@@ -6,11 +6,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // ShellProvider implements Provider using shell git commands.
 type ShellProvider struct {
 	workDir string
+	mu      sync.Mutex // Prevents concurrent git operations
 }
 
 // NewShellProvider creates a new shell-based git provider.
@@ -28,6 +30,13 @@ func (p *ShellProvider) IsRepo() bool {
 
 // GetBranch returns the current branch name.
 func (p *ShellProvider) GetBranch(ctx context.Context) (string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.getBranchInternal(ctx)
+}
+
+// getBranchInternal returns branch without locking (for internal use)
+func (p *ShellProvider) getBranchInternal(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "branch", "--show-current")
 	cmd.Dir = p.workDir
 	out, err := cmd.Output()
@@ -46,10 +55,13 @@ func (p *ShellProvider) GetBranch(ctx context.Context) (string, error) {
 
 // GetStatus returns the status of files in the repository.
 func (p *ShellProvider) GetStatus(ctx context.Context) (*Status, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	status := NewStatus()
 
-	// Get branch
-	branch, err := p.GetBranch(ctx)
+	// Get branch (use internal version since we already hold the lock)
+	branch, err := p.getBranchInternal(ctx)
 	if err == nil {
 		status.Branch = branch
 	}
@@ -128,6 +140,9 @@ func (p *ShellProvider) GetStatus(ctx context.Context) (*Status, error) {
 
 // GetDiff returns the diff for a file or the entire working tree.
 func (p *ShellProvider) GetDiff(ctx context.Context, path string) (string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	var cmd *exec.Cmd
 	if path == "" {
 		cmd = exec.CommandContext(ctx, "git", "diff")

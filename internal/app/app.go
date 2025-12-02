@@ -201,13 +201,6 @@ func (m Model) refreshGitStatus() tea.Cmd {
 	}
 }
 
-// tickGitRefresh returns a command that triggers git refresh periodically
-func tickGitRefresh() tea.Cmd {
-	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-		return gitTickMsg{}
-	})
-}
-
 type gitTickMsg struct{}
 
 // Update handles messages and updates the model.
@@ -222,7 +215,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ready = true
 		// Update child component sizes
 		m = m.updateSizes()
-		return m, tickGitRefresh()
+		return m, nil
 
 	case GitStatusMsg:
 		m.isGitRepo = msg.IsRepo
@@ -231,10 +224,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Status != nil {
 			m.fileTree = m.fileTree.SetGitStatus(msg.Status)
 		}
-		return m, tickGitRefresh()
+		return m, nil
 
 	case gitTickMsg:
-		return m, m.refreshGitStatus()
+		// Legacy - no longer used
+		return m, nil
 
 	case FileChangeMsg:
 		// Always continue watching for more events
