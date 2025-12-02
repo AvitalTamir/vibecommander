@@ -313,6 +313,7 @@ func (m Model) View() string {
 }
 
 // renderVT renders the virtual terminal screen buffer with colors
+// Optimized to use raw ANSI codes and batch consecutive characters with same style
 func (m Model) renderVT() string {
 	if m.vt == nil {
 		return ""
@@ -328,12 +329,34 @@ func (m Model) renderVT() string {
 
 	// Get cursor position and visibility
 	cursor := m.vt.Cursor()
-	// Respect app's cursor visibility - TUI apps often hide cursor and draw their own
 	cursorVisible := m.vt.CursorVisible() && m.Focused()
 
-	var lines []string
+	var result strings.Builder
+	result.Grow(rows * cols * 2) // Pre-allocate
+
 	for row := 0; row < rows; row++ {
-		var line strings.Builder
+		if row > 0 {
+			result.WriteByte('\n')
+		}
+
+		// Track current style to batch characters
+		var currentFG, currentBG vt10x.Color
+		var currentMode int16
+		var currentIsCursor bool
+		var batch strings.Builder
+		firstCell := true
+
+		flushBatch := func() {
+			if batch.Len() == 0 {
+				return
+			}
+			// Write ANSI codes for the batch
+			result.WriteString(buildANSI(currentFG, currentBG, currentMode, currentIsCursor))
+			result.WriteString(batch.String())
+			result.WriteString("\x1b[0m") // Reset
+			batch.Reset()
+		}
+
 		for col := 0; col < cols; col++ {
 			glyph := m.vt.Cell(col, row)
 			ch := glyph.Char
@@ -341,67 +364,87 @@ func (m Model) renderVT() string {
 				ch = ' '
 			}
 
-			// Build style with foreground and background colors
-			style := lipgloss.NewStyle()
-
-			// Check if this is the cursor position
 			isCursor := cursorVisible && col == cursor.X && row == cursor.Y
 
-			if isCursor {
-				// Render cursor with reverse video (swap fg/bg)
-				style = style.Reverse(true)
-			} else {
-				// Apply foreground color
-				if fg := colorToLipgloss(glyph.FG); fg != "" {
-					style = style.Foreground(lipgloss.Color(fg))
-				}
-
-				// Apply background color
-				if bg := colorToLipgloss(glyph.BG); bg != "" {
-					style = style.Background(lipgloss.Color(bg))
-				}
-
-				// Apply text attributes from glyph Mode
-				if glyph.Mode&0x01 != 0 { // attrReverse
-					style = style.Reverse(true)
-				}
-				if glyph.Mode&0x02 != 0 { // attrUnderline
-					style = style.Underline(true)
-				}
-				if glyph.Mode&0x04 != 0 { // attrBold
-					style = style.Bold(true)
-				}
-				if glyph.Mode&0x10 != 0 { // attrItalic
-					style = style.Italic(true)
-				}
+			// Check if style changed
+			if !firstCell && (glyph.FG != currentFG || glyph.BG != currentBG || glyph.Mode != currentMode || isCursor != currentIsCursor) {
+				flushBatch()
 			}
 
-			// Render the character with style
-			line.WriteString(style.Render(string(ch)))
+			currentFG = glyph.FG
+			currentBG = glyph.BG
+			currentMode = glyph.Mode
+			currentIsCursor = isCursor
+			firstCell = false
+
+			batch.WriteRune(ch)
 		}
-		lines = append(lines, line.String())
+		flushBatch()
 	}
 
-	return strings.Join(lines, "\n")
+	return result.String()
 }
 
-// colorToLipgloss converts a vt10x color to a lipgloss color string
-func colorToLipgloss(c vt10x.Color) string {
-	// Check for default colors (>= 0x01000000)
+// buildANSI builds ANSI escape sequence for the given style
+func buildANSI(fg, bg vt10x.Color, mode int16, isCursor bool) string {
+	var codes []string
+
+	if isCursor {
+		codes = append(codes, "7") // Reverse video
+	} else {
+		// Mode attributes
+		if mode&0x01 != 0 { // Reverse
+			codes = append(codes, "7")
+		}
+		if mode&0x02 != 0 { // Underline
+			codes = append(codes, "4")
+		}
+		if mode&0x04 != 0 { // Bold
+			codes = append(codes, "1")
+		}
+		if mode&0x10 != 0 { // Italic
+			codes = append(codes, "3")
+		}
+
+		// Foreground color
+		if fgCode := colorToANSI(fg, true); fgCode != "" {
+			codes = append(codes, fgCode)
+		}
+
+		// Background color
+		if bgCode := colorToANSI(bg, false); bgCode != "" {
+			codes = append(codes, bgCode)
+		}
+	}
+
+	if len(codes) == 0 {
+		return ""
+	}
+	return "\x1b[" + strings.Join(codes, ";") + "m"
+}
+
+// colorToANSI converts a vt10x color to ANSI escape code
+func colorToANSI(c vt10x.Color, isFG bool) string {
+	// Default color
 	if c >= 0x01000000 {
-		return "" // Use default terminal colors
+		return ""
 	}
 
-	// ANSI 256-color palette (0-255)
+	base := 38 // Foreground
+	if !isFG {
+		base = 48 // Background
+	}
+
+	// ANSI 256-color palette
 	if c < 256 {
-		return fmt.Sprintf("%d", c)
+		return fmt.Sprintf("%d;5;%d", base, c)
 	}
 
-	// True color RGB (encoded as 0x00RRGGBB)
+	// True color RGB
 	r := (c >> 16) & 0xFF
 	g := (c >> 8) & 0xFF
 	b := c & 0xFF
-	return fmt.Sprintf("#%02x%02x%02x", r, g, b)
+	return fmt.Sprintf("%d;2;%d;%d;%d", base, r, g, b)
 }
 
 // Focus gives focus to this component.
