@@ -37,12 +37,12 @@ func (p *ShellProvider) GetBranch(ctx context.Context) (string, error) {
 
 // getBranchInternal returns branch without locking (for internal use)
 func (p *ShellProvider) getBranchInternal(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "branch", "--show-current")
+	cmd := exec.CommandContext(ctx, "git", "--no-optional-locks", "branch", "--show-current")
 	cmd.Dir = p.workDir
 	out, err := cmd.Output()
 	if err != nil {
 		// Try getting HEAD ref for detached state
-		cmd = exec.CommandContext(ctx, "git", "rev-parse", "--short", "HEAD")
+		cmd = exec.CommandContext(ctx, "git", "--no-optional-locks", "rev-parse", "--short", "HEAD")
 		cmd.Dir = p.workDir
 		out, err = cmd.Output()
 		if err != nil {
@@ -67,7 +67,8 @@ func (p *ShellProvider) GetStatus(ctx context.Context) (*Status, error) {
 	}
 
 	// Get status with porcelain format
-	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain=v1", "-uall")
+	// Use --no-optional-locks to avoid taking index.lock for read-only operation
+	cmd := exec.CommandContext(ctx, "git", "--no-optional-locks", "status", "--porcelain=v1", "-uall")
 	cmd.Dir = p.workDir
 	out, err := cmd.Output()
 	if err != nil {
@@ -116,7 +117,7 @@ func (p *ShellProvider) GetStatus(ctx context.Context) (*Status, error) {
 	}
 
 	// Get ahead/behind info
-	cmd = exec.CommandContext(ctx, "git", "rev-list", "--left-right", "--count", "@{upstream}...HEAD")
+	cmd = exec.CommandContext(ctx, "git", "--no-optional-locks", "rev-list", "--left-right", "--count", "@{upstream}...HEAD")
 	cmd.Dir = p.workDir
 	out, err = cmd.Output()
 	if err == nil {
@@ -145,9 +146,9 @@ func (p *ShellProvider) GetDiff(ctx context.Context, path string) (string, error
 
 	var cmd *exec.Cmd
 	if path == "" {
-		cmd = exec.CommandContext(ctx, "git", "diff")
+		cmd = exec.CommandContext(ctx, "git", "--no-optional-locks", "diff")
 	} else {
-		cmd = exec.CommandContext(ctx, "git", "diff", "--", path)
+		cmd = exec.CommandContext(ctx, "git", "--no-optional-locks", "diff", "--", path)
 	}
 	cmd.Dir = p.workDir
 

@@ -194,10 +194,10 @@ func (m Model) watchFilesCmd() tea.Cmd {
 }
 
 // gitDebounceInterval is the minimum time between git refreshes
-const gitDebounceInterval = 1 * time.Second
+const gitDebounceInterval = 500 * time.Millisecond
 
 // gitTickInterval is how often we poll git status
-const gitTickInterval = 2 * time.Second
+const gitTickInterval = 1 * time.Second
 
 // refreshGitStatus fetches the current git status
 func (m Model) refreshGitStatus() tea.Cmd {
