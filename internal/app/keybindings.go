@@ -28,6 +28,9 @@ type KeyMap struct {
 
 	// AI
 	LaunchAI key.Binding
+
+	// Theme
+	CycleTheme key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings.
@@ -107,6 +110,12 @@ func DefaultKeyMap() KeyMap {
 		LaunchAI: key.NewBinding(
 			key.WithKeys("alt+a"),
 			key.WithHelp("M-a", "launch AI"),
+		),
+
+		// Theme
+		CycleTheme: key.NewBinding(
+			key.WithKeys("alt+t"),
+			key.WithHelp("M-t", "cycle theme"),
 		),
 	}
 }

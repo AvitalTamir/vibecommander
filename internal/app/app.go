@@ -359,6 +359,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Args:    []string{},
 				}
 			}
+
+		case key.Matches(msg, m.keys.CycleTheme):
+			// Cycle to next theme
+			theme.NextTheme()
+			return m, nil
 		}
 
 		// Any other key closes help
@@ -654,14 +659,19 @@ func (m Model) renderStatusBar() string {
 		Foreground(theme.DimPurple).
 		Render(" │ ^H help │ ^Q quit")
 
+	// Theme name
+	themeName := lipgloss.NewStyle().
+		Foreground(theme.LaserPurple).
+		Render(theme.CurrentTheme().Name)
+
 	// Version
 	version := lipgloss.NewStyle().
-		Foreground(theme.LaserPurple).
-		Render("Vibe Commander v0.1.0")
+		Foreground(theme.DimPurple).
+		Render("v0.1.0")
 
 	// Layout the status bar
 	left := branch + panelInfo + help
-	right := version
+	right := themeName + " │ " + version
 
 	gap := m.layout.TotalWidth - lipgloss.Width(left) - lipgloss.Width(right) - 2
 	if gap < 0 {
@@ -750,6 +760,7 @@ func (m Model) renderHelpOverlay(_ string) string {
 		"║                                                          ║",
 		"║  ACTIONS                                                 ║",
 		"║    Alt+A         Launch AI assistant                     ║",
+		"║    Alt+T         Cycle theme                             ║",
 		"║    Ctrl+H        Toggle this help                        ║",
 		"║    Ctrl+Q        Quit                                    ║",
 		"║                                                          ║",

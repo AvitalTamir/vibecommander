@@ -43,21 +43,76 @@ var (
 
 // Panel styles
 var (
-	PanelInactive = lipgloss.NewStyle().
-			Border(GlowBorder).
-			BorderForeground(DimPurple)
-
-	PanelActive = lipgloss.NewStyle().
-			Border(GlowBorder).
-			BorderForeground(CyberCyan)
-
-	PanelFocused = lipgloss.NewStyle().
-			Border(NeonBorder).
-			BorderForeground(MagentaBlaze)
+	PanelInactive lipgloss.Style
+	PanelActive   lipgloss.Style
+	PanelFocused  lipgloss.Style
 )
 
 // Text styles - hierarchy from most to least prominent
 var (
+	TextH1             lipgloss.Style
+	TextH2             lipgloss.Style
+	TextBody           lipgloss.Style
+	TextSecondaryStyle lipgloss.Style
+	TextMutedStyle     lipgloss.Style
+	TextDimStyle       lipgloss.Style
+)
+
+// File tree styles
+var (
+	FileTreeDir      lipgloss.Style
+	FileTreeFile     lipgloss.Style
+	FileTreeSelected lipgloss.Style
+)
+
+// Git status styles
+var (
+	GitStatusModified  lipgloss.Style
+	GitStatusAdded     lipgloss.Style
+	GitStatusDeleted   lipgloss.Style
+	GitStatusUntracked lipgloss.Style
+	GitStatusConflict  lipgloss.Style
+	GitBranchStyle     lipgloss.Style
+	GitAheadStyle      lipgloss.Style
+	GitBehindStyle     lipgloss.Style
+)
+
+// Diff styles
+var (
+	DiffAddedStyle      lipgloss.Style
+	DiffRemovedStyle    lipgloss.Style
+	DiffContextStyle    lipgloss.Style
+	DiffHunkStyle       lipgloss.Style
+	DiffLineNumberStyle lipgloss.Style
+)
+
+// Status bar styles
+var (
+	StatusBarStyle     lipgloss.Style
+	StatusBarSection   lipgloss.Style
+	StatusBarHighlight lipgloss.Style
+)
+
+// Spinner style
+var SpinnerStyle lipgloss.Style
+
+// regenerateStyles rebuilds all style variables based on current color values.
+// Called when theme changes.
+func regenerateStyles() {
+	// Panel styles
+	PanelInactive = lipgloss.NewStyle().
+		Border(GlowBorder).
+		BorderForeground(DimPurple)
+
+	PanelActive = lipgloss.NewStyle().
+		Border(GlowBorder).
+		BorderForeground(CyberCyan)
+
+	PanelFocused = lipgloss.NewStyle().
+		Border(NeonBorder).
+		BorderForeground(MagentaBlaze)
+
+	// Text styles
 	TextH1 = lipgloss.NewStyle().
 		Bold(true).
 		Foreground(CyberCyan)
@@ -67,102 +122,94 @@ var (
 		Foreground(MagentaBlaze)
 
 	TextBody = lipgloss.NewStyle().
-			Foreground(PureWhite)
+		Foreground(PureWhite)
 
 	TextSecondaryStyle = lipgloss.NewStyle().
-				Foreground(Silver)
+		Foreground(Silver)
 
 	TextMutedStyle = lipgloss.NewStyle().
-			Foreground(MutedLavender).
-			Italic(true)
+		Foreground(MutedLavender).
+		Italic(true)
 
 	TextDimStyle = lipgloss.NewStyle().
-			Foreground(DimPurple).
-			Faint(true)
-)
+		Foreground(DimPurple).
+		Faint(true)
 
-// File tree styles
-var (
+	// File tree styles
 	FileTreeDir = lipgloss.NewStyle().
-			Foreground(CyberCyan).
-			Bold(true)
+		Foreground(CyberCyan).
+		Bold(true)
 
 	FileTreeFile = lipgloss.NewStyle().
-			Foreground(PureWhite)
+		Foreground(PureWhite)
 
 	FileTreeSelected = lipgloss.NewStyle().
-				Foreground(MagentaBlaze).
-				Bold(true)
-)
+		Foreground(MagentaBlaze).
+		Bold(true)
 
-// Git status styles
-var (
+	// Git status styles
 	GitStatusModified = lipgloss.NewStyle().
-				Foreground(ElectricYellow)
+		Foreground(ElectricYellow)
 
 	GitStatusAdded = lipgloss.NewStyle().
-			Foreground(MatrixGreen)
+		Foreground(MatrixGreen)
 
 	GitStatusDeleted = lipgloss.NewStyle().
-				Foreground(NeonRed)
+		Foreground(NeonRed)
 
 	GitStatusUntracked = lipgloss.NewStyle().
-				Foreground(LaserPurple)
+		Foreground(LaserPurple)
 
 	GitStatusConflict = lipgloss.NewStyle().
-				Foreground(NeonRed).
-				Bold(true)
+		Foreground(NeonRed).
+		Bold(true)
 
 	GitBranchStyle = lipgloss.NewStyle().
-			Foreground(CyberCyan).
-			Bold(true)
+		Foreground(CyberCyan).
+		Bold(true)
 
 	GitAheadStyle = lipgloss.NewStyle().
-			Foreground(MatrixGreen)
+		Foreground(MatrixGreen)
 
 	GitBehindStyle = lipgloss.NewStyle().
-			Foreground(NeonRed)
-)
+		Foreground(NeonRed)
 
-// Diff styles
-var (
+	// Diff styles
 	DiffAddedStyle = lipgloss.NewStyle().
-			Foreground(MatrixGreen)
+		Foreground(MatrixGreen)
 
 	DiffRemovedStyle = lipgloss.NewStyle().
-				Foreground(NeonRed)
+		Foreground(NeonRed)
 
 	DiffContextStyle = lipgloss.NewStyle().
-				Foreground(Silver)
+		Foreground(Silver)
 
 	DiffHunkStyle = lipgloss.NewStyle().
-			Foreground(LaserPurple).
-			Bold(true)
+		Foreground(LaserPurple).
+		Bold(true)
 
 	DiffLineNumberStyle = lipgloss.NewStyle().
-				Foreground(DimPurple).
-				Width(4).
-				Align(lipgloss.Right)
-)
+		Foreground(DimPurple).
+		Width(4).
+		Align(lipgloss.Right)
 
-// Status bar styles
-var (
+	// Status bar styles
 	StatusBarStyle = lipgloss.NewStyle().
-			Foreground(Silver).
-			Padding(0, 1)
+		Foreground(Silver).
+		Padding(0, 1)
 
 	StatusBarSection = lipgloss.NewStyle().
-				Foreground(MutedLavender).
-				Padding(0, 1)
+		Foreground(MutedLavender).
+		Padding(0, 1)
 
 	StatusBarHighlight = lipgloss.NewStyle().
-				Foreground(CyberCyan).
-				Bold(true)
-)
+		Foreground(CyberCyan).
+		Bold(true)
 
-// Spinner style
-var SpinnerStyle = lipgloss.NewStyle().
-	Foreground(MagentaBlaze)
+	// Spinner style
+	SpinnerStyle = lipgloss.NewStyle().
+		Foreground(MagentaBlaze)
+}
 
 // GetPanelStyle returns the appropriate panel style based on focus state.
 func GetPanelStyle(focused bool) lipgloss.Style {

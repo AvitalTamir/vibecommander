@@ -79,8 +79,19 @@ go build -o vibecommander ./cmd/vibecommander
 ### General
 | Key | Action |
 |-----|--------|
+| `Alt+T` | Cycle theme |
 | `Ctrl+H` | Help |
 | `Ctrl+Q` | Quit |
+
+## Themes
+
+Press `Alt+T` to cycle through themes:
+
+- **Midnight Miami** - Neon pink and cyan on deep purple
+- **Piña Colada** - Tropical sunset vibes
+- **Lobster Boy** - Fresh from the seafood shack
+- **Feral Jungle** - Deep in the rainforest
+- **Vampire Weekend** - Gothic but make it indie
 
 ## Git Integration
 
