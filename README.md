@@ -10,18 +10,7 @@
   <img src="https://img.shields.io/badge/tabs-who%20needs%20em-purple?style=flat-square" alt="Tabs: Who needs em">
 </p>
 
-```
-┌─ FILES ─────────┬─ Claude ──────────────────── 47% ─┐
-│ 📁 src/         │                                   │
-│  ├─ 📄 main.go  │  I've updated the function to     │
-│  └─ 📁 utils/   │  handle edge cases. The changes   │
-│ 📁 tests/       │  are in utils/parser.go...        │
-│ 📄 go.mod       │                                   │
-├─ TERMINAL ● ────────────────────────────────────────┤
-│ $ go test ./...                                     │
-│ ok   myproject/utils  0.042s                        │
-└─────────────────────────────────────────────────────┘
-```
+<img width="1712" height="1115" alt="Xnapper-2025-12-03-21 57 15" src="https://github.com/user-attachments/assets/03605818-ce17-4ddb-b013-ce5ad4019d0e" />
 
 ## Why Vibe Commander?
 
