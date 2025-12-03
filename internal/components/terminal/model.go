@@ -89,49 +89,28 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case OutputMsg:
 		m.mu.Lock()
-		if m.vt != nil {
-			cols, rows := m.vt.Size()
+		// Snap to live view on new output
+		m.scrollOffset = 0
 
-			// Capture all screen lines before write (both plain text and rendered)
-			oldPlainLines := make([]string, rows)
-			oldRenderedLines := make([]string, rows)
-			for row := 0; row < rows; row++ {
-				oldPlainLines[row] = m.getScreenLinePlain(cols, row)
-				oldRenderedLines[row] = m.renderScreenLine(cols, row)
-			}
+		if m.vt != nil {
+			cols, _ := m.vt.Size()
+
+			// Only capture top line for scroll detection (cheap operation)
+			oldTopPlain := m.getScreenLinePlain(cols, 0)
+			oldTopRendered := m.renderScreenLine(cols, 0)
 
 			m.vt.Write(msg.Data)
 
-			// Get new top line to detect scroll amount
-			newTopLine := m.getScreenLinePlain(cols, 0)
+			newTopPlain := m.getScreenLinePlain(cols, 0)
 
-			// Find where the new top line was in the old screen
-			scrollAmount := -1 // -1 means not found (entire screen scrolled)
-			for i := 0; i < rows; i++ {
-				if oldPlainLines[i] == newTopLine {
-					scrollAmount = i
-					break
-				}
-			}
+			// Only add to scrollback if top line actually changed (scroll happened)
+			if oldTopPlain != "" && oldTopPlain != newTopPlain {
+				m.scrollback = append(m.scrollback, oldTopRendered)
 
-			// Add scrolled lines to scrollback
-			if scrollAmount == -1 {
-				// Entire screen scrolled off - save all non-empty old lines
-				for i := 0; i < rows; i++ {
-					if oldPlainLines[i] != "" {
-						m.scrollback = append(m.scrollback, oldRenderedLines[i])
-					}
+				// Trim scrollback if too large
+				if len(m.scrollback) > m.maxScrollback {
+					m.scrollback = m.scrollback[len(m.scrollback)-m.maxScrollback:]
 				}
-			} else if scrollAmount > 0 {
-				// Partial scroll - save lines that scrolled off
-				for i := 0; i < scrollAmount; i++ {
-					m.scrollback = append(m.scrollback, oldRenderedLines[i])
-				}
-			}
-
-			// Trim scrollback if too large
-			if len(m.scrollback) > m.maxScrollback {
-				m.scrollback = m.scrollback[len(m.scrollback)-m.maxScrollback:]
 			}
 		}
 		m.mu.Unlock()
@@ -326,8 +305,9 @@ func (m Model) readOutput() tea.Cmd {
 			return nil
 		}
 
-		// Smaller buffer to capture scrollback more frequently
-		buf := make([]byte, 128)
+		// Balanced buffer size - large enough to reduce OutputMsg frequency
+		// but not so large that we miss scroll events
+		buf := make([]byte, 1024)
 		n, err := m.pty.Read(buf)
 		if err != nil {
 			if err == io.EOF {
@@ -693,6 +673,9 @@ func (m Model) SetSize(width, height int) Model {
 	if !m.ready {
 		m.ready = true
 	}
+
+	// Reset scroll offset on resize to show live view
+	m.scrollOffset = 0
 
 	// Resize virtual terminal if it exists
 	if m.vt != nil && width > 0 && termHeight > 0 {
