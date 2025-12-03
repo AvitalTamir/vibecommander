@@ -1,15 +1,12 @@
 package terminal
 
 import (
-	"bytes"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/theme"
@@ -18,9 +15,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/creack/pty"
 )
-
-// Debounce interval for rendering (~60fps)
-const renderDebounceInterval = 16 * time.Millisecond
 
 // Messages
 type (
@@ -39,9 +33,6 @@ type (
 		Cmd  string
 		Args []string
 	}
-
-	// flushOutputMsg triggers flushing buffered output to vt10x.
-	flushOutputMsg struct{}
 )
 
 // Model is the terminal component for running interactive programs.
@@ -55,16 +46,10 @@ type Model struct {
 	running bool
 	exitErr error
 
-	// Scrollback with hash-based detection
-	scrollback     []string // Lines that scrolled off the top
-	scrollbackHash []uint64 // FNV-1a hashes for O(1) lookup
-	scrollOffset   int      // 0 = live view, >0 = scrolled up N lines
-	maxScrollback  int      // Max lines to keep
-
-	// Output buffering for debouncing
-	outputBuffer  bytes.Buffer
-	pendingOutput bool
-	flushPending  bool // Tracks if a flush is already scheduled
+	// Scrollback buffer
+	scrollback    []string // Lines that scrolled off the top
+	scrollOffset  int      // 0 = live view, >0 = scrolled up N lines
+	maxScrollback int      // Max lines to keep
 
 	theme *theme.Theme
 	ready bool
@@ -76,6 +61,21 @@ func New() Model {
 		theme:         theme.DefaultTheme(),
 		maxScrollback: 10000,
 	}
+}
+
+// addToScrollback adds a line to scrollback with deduplication
+func (m *Model) addToScrollback(line string) {
+	// Check against recent entries to avoid duplicates
+	checkCount := 20 // Check last 20 entries
+	if checkCount > len(m.scrollback) {
+		checkCount = len(m.scrollback)
+	}
+	for i := len(m.scrollback) - checkCount; i < len(m.scrollback); i++ {
+		if m.scrollback[i] == line {
+			return // Already exists, skip
+		}
+	}
+	m.scrollback = append(m.scrollback, line)
 }
 
 // Init initializes the terminal.
@@ -102,87 +102,61 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m.startProcess(msg.Cmd, msg.Args)
 
 	case OutputMsg:
-		// Buffer the output data - don't write to vt10x yet
 		m.mu.Lock()
-		m.outputBuffer.Write(msg.Data)
-		m.pendingOutput = true
-		m.mu.Unlock()
+		// Snap to live view on new output
+		m.scrollOffset = 0
 
-		// Schedule a debounced flush if not already pending
-		if !m.flushPending {
-			m.flushPending = true
-			return m, tea.Tick(renderDebounceInterval, func(time.Time) tea.Msg {
-				return flushOutputMsg{}
-			})
-		}
-		// Already have a flush pending, just continue reading
-		return m, m.ContinueReading()
-
-	case flushOutputMsg:
-		m.mu.Lock()
-		m.flushPending = false
-
-		if m.pendingOutput && m.vt != nil {
-			// Snap to live view on new output
-			m.scrollOffset = 0
-
-			// Get buffered data
-			data := m.outputBuffer.Bytes()
-			m.outputBuffer.Reset()
-			m.pendingOutput = false
-
+		if m.vt != nil {
 			cols, rows := m.vt.Size()
 
-			// Capture screen hashes before write for scroll detection
-			oldHashes := make([]uint64, rows)
+			// Capture all screen lines before write
+			oldPlainLines := make([]string, rows)
 			oldRenderedLines := make([]string, rows)
 			for row := 0; row < rows; row++ {
-				plainLine := m.getScreenLinePlain(cols, row)
-				oldHashes[row] = hashLine(plainLine)
+				oldPlainLines[row] = m.getScreenLinePlain(cols, row)
 				oldRenderedLines[row] = m.renderScreenLine(cols, row)
 			}
 
-			// Write all buffered data at once
-			m.vt.Write(data)
+			// Write data
+			m.vt.Write(msg.Data)
 
-			// Detect scroll using hash comparison (O(n) instead of O(n²))
-			newTopHash := hashLine(m.getScreenLinePlain(cols, 0))
-			scrollAmount := -1
-			for i := 0; i < rows; i++ {
-				if oldHashes[i] == newTopHash {
-					scrollAmount = i
-					break
+			// Find where the new top line was in the old screen
+			newTopLine := m.getScreenLinePlain(cols, 0)
+			scrollAmount := 0
+
+			if len(strings.TrimSpace(newTopLine)) > 0 {
+				for i := 1; i < rows; i++ {
+					if len(strings.TrimSpace(oldPlainLines[i])) > 0 && oldPlainLines[i] == newTopLine {
+						scrollAmount = i
+						break
+					}
 				}
 			}
 
 			// Add scrolled lines to scrollback
-			if scrollAmount == -1 {
-				// Full screen scroll - add all non-empty lines
-				for i := 0; i < rows; i++ {
-					plainLine := m.getScreenLinePlain(cols, i)
-					if plainLine != "" {
-						m.scrollback = append(m.scrollback, oldRenderedLines[i])
-						m.scrollbackHash = append(m.scrollbackHash, oldHashes[i])
+			if scrollAmount > 0 {
+				// Normal scroll - add lines that scrolled off
+				for i := 0; i < scrollAmount; i++ {
+					if len(strings.TrimSpace(oldPlainLines[i])) > 0 {
+						m.addToScrollback(oldRenderedLines[i])
 					}
 				}
-			} else if scrollAmount > 0 {
-				// Partial scroll - add scrolled lines
-				for i := 0; i < scrollAmount; i++ {
-					m.scrollback = append(m.scrollback, oldRenderedLines[i])
-					m.scrollbackHash = append(m.scrollbackHash, oldHashes[i])
+			} else if oldPlainLines[0] != newTopLine && len(strings.TrimSpace(oldPlainLines[0])) > 0 {
+				// Screen changed but couldn't detect scroll amount
+				// This happens with large data chunks - save all non-empty old lines
+				for i := 0; i < rows; i++ {
+					if len(strings.TrimSpace(oldPlainLines[i])) > 0 {
+						m.addToScrollback(oldRenderedLines[i])
+					}
 				}
 			}
 
 			// Trim scrollback if too large
 			if len(m.scrollback) > m.maxScrollback {
-				excess := len(m.scrollback) - m.maxScrollback
-				m.scrollback = m.scrollback[excess:]
-				m.scrollbackHash = m.scrollbackHash[excess:]
+				m.scrollback = m.scrollback[len(m.scrollback)-m.maxScrollback:]
 			}
 		}
 		m.mu.Unlock()
-
-		// Continue reading output
 		return m, m.ContinueReading()
 
 	case ExitMsg:
@@ -574,13 +548,6 @@ func (m Model) getScreenLinePlain(cols, row int) string {
 		result.WriteRune(ch)
 	}
 	return strings.TrimRight(result.String(), " ")
-}
-
-// hashLine computes FNV-1a hash of a string for O(1) comparison
-func hashLine(s string) uint64 {
-	h := fnv.New64a()
-	h.Write([]byte(s))
-	return h.Sum64()
 }
 
 // getTopLine returns the current top line of the terminal as plain text (no ANSI codes)
