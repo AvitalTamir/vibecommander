@@ -93,24 +93,43 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.scrollOffset = 0
 
 		if m.vt != nil {
-			cols, _ := m.vt.Size()
+			cols, rows := m.vt.Size()
 
-			// Only capture top line for scroll detection (cheap operation)
-			oldTopPlain := m.getScreenLinePlain(cols, 0)
-			oldTopRendered := m.renderScreenLine(cols, 0)
+			// Capture all screen lines before write for scrollback
+			oldPlainLines := make([]string, rows)
+			oldRenderedLines := make([]string, rows)
+			for row := 0; row < rows; row++ {
+				oldPlainLines[row] = m.getScreenLinePlain(cols, row)
+				oldRenderedLines[row] = m.renderScreenLine(cols, row)
+			}
 
 			m.vt.Write(msg.Data)
 
-			newTopPlain := m.getScreenLinePlain(cols, 0)
-
-			// Only add to scrollback if top line actually changed (scroll happened)
-			if oldTopPlain != "" && oldTopPlain != newTopPlain {
-				m.scrollback = append(m.scrollback, oldTopRendered)
-
-				// Trim scrollback if too large
-				if len(m.scrollback) > m.maxScrollback {
-					m.scrollback = m.scrollback[len(m.scrollback)-m.maxScrollback:]
+			// Detect scroll by checking where new top line was in old screen
+			newTopLine := m.getScreenLinePlain(cols, 0)
+			scrollAmount := -1
+			for i := 0; i < rows; i++ {
+				if oldPlainLines[i] == newTopLine {
+					scrollAmount = i
+					break
 				}
+			}
+
+			// Add scrolled lines to scrollback
+			if scrollAmount == -1 {
+				for i := 0; i < rows; i++ {
+					if oldPlainLines[i] != "" {
+						m.scrollback = append(m.scrollback, oldRenderedLines[i])
+					}
+				}
+			} else if scrollAmount > 0 {
+				for i := 0; i < scrollAmount; i++ {
+					m.scrollback = append(m.scrollback, oldRenderedLines[i])
+				}
+			}
+
+			if len(m.scrollback) > m.maxScrollback {
+				m.scrollback = m.scrollback[len(m.scrollback)-m.maxScrollback:]
 			}
 		}
 		m.mu.Unlock()
@@ -305,9 +324,8 @@ func (m Model) readOutput() tea.Cmd {
 			return nil
 		}
 
-		// Balanced buffer size - large enough to reduce OutputMsg frequency
-		// but not so large that we miss scroll events
-		buf := make([]byte, 1024)
+		// Large buffer to reduce number of redraws and flickering
+		buf := make([]byte, 65536)
 		n, err := m.pty.Read(buf)
 		if err != nil {
 			if err == io.EOF {
