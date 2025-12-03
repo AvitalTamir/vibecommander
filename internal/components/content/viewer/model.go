@@ -478,6 +478,11 @@ func (m Model) IsSearching() bool {
 	return m.searching
 }
 
+// HasActiveSearch returns whether there's an active search query (for n/p navigation).
+func (m Model) HasActiveSearch() bool {
+	return m.searchQuery != ""
+}
+
 // renderSearchBar renders the search input bar.
 func (m Model) renderSearchBar(width int) string {
 	prefix := lipgloss.NewStyle().

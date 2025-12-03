@@ -654,7 +654,11 @@ func (m Model) renderRightPanel() string {
 	if focused {
 		switch mode {
 		case content.ModeViewer:
-			bottomHints = "↑↓:scroll"
+			if m.content.HasActiveSearch() {
+				bottomHints = "n/p:search  esc:clear"
+			} else {
+				bottomHints = "↑↓:scroll  /:search"
+			}
 		case content.ModeDiff:
 			bottomHints = "↑↓:scroll"
 		}

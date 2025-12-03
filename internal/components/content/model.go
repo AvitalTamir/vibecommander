@@ -412,6 +412,14 @@ func (m Model) ContentView() string {
 	}
 }
 
+// HasActiveSearch returns whether the viewer has an active search.
+func (m Model) HasActiveSearch() bool {
+	if m.mode == ModeViewer {
+		return m.viewer.HasActiveSearch()
+	}
+	return false
+}
+
 // TitleInfo returns the title text and scroll percent for the current mode.
 func (m Model) TitleInfo() (title string, scrollPercent float64) {
 	switch m.mode {
