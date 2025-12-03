@@ -1,12 +1,15 @@
 package terminal
 
 import (
+	"bytes"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/theme"
@@ -15,6 +18,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/creack/pty"
 )
+
+// Debounce interval for rendering (~60fps)
+const renderDebounceInterval = 16 * time.Millisecond
 
 // Messages
 type (
@@ -33,6 +39,9 @@ type (
 		Cmd  string
 		Args []string
 	}
+
+	// flushOutputMsg triggers flushing buffered output to vt10x.
+	flushOutputMsg struct{}
 )
 
 // Model is the terminal component for running interactive programs.
@@ -46,11 +55,16 @@ type Model struct {
 	running bool
 	exitErr error
 
-	// Scrollback
-	scrollback    []string // Lines that scrolled off the top
-	scrollOffset  int      // 0 = live view, >0 = scrolled up N lines
-	maxScrollback int      // Max lines to keep
-	lastTopLine   string   // Track changes to detect scroll
+	// Scrollback with hash-based detection
+	scrollback     []string // Lines that scrolled off the top
+	scrollbackHash []uint64 // FNV-1a hashes for O(1) lookup
+	scrollOffset   int      // 0 = live view, >0 = scrolled up N lines
+	maxScrollback  int      // Max lines to keep
+
+	// Output buffering for debouncing
+	outputBuffer  bytes.Buffer
+	pendingOutput bool
+	flushPending  bool // Tracks if a flush is already scheduled
 
 	theme *theme.Theme
 	ready bool
@@ -88,28 +102,54 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m.startProcess(msg.Cmd, msg.Args)
 
 	case OutputMsg:
+		// Buffer the output data - don't write to vt10x yet
 		m.mu.Lock()
-		// Snap to live view on new output
-		m.scrollOffset = 0
+		m.outputBuffer.Write(msg.Data)
+		m.pendingOutput = true
+		m.mu.Unlock()
 
-		if m.vt != nil {
+		// Schedule a debounced flush if not already pending
+		if !m.flushPending {
+			m.flushPending = true
+			return m, tea.Tick(renderDebounceInterval, func(time.Time) tea.Msg {
+				return flushOutputMsg{}
+			})
+		}
+		// Already have a flush pending, just continue reading
+		return m, m.ContinueReading()
+
+	case flushOutputMsg:
+		m.mu.Lock()
+		m.flushPending = false
+
+		if m.pendingOutput && m.vt != nil {
+			// Snap to live view on new output
+			m.scrollOffset = 0
+
+			// Get buffered data
+			data := m.outputBuffer.Bytes()
+			m.outputBuffer.Reset()
+			m.pendingOutput = false
+
 			cols, rows := m.vt.Size()
 
-			// Capture all screen lines before write for scrollback
-			oldPlainLines := make([]string, rows)
+			// Capture screen hashes before write for scroll detection
+			oldHashes := make([]uint64, rows)
 			oldRenderedLines := make([]string, rows)
 			for row := 0; row < rows; row++ {
-				oldPlainLines[row] = m.getScreenLinePlain(cols, row)
+				plainLine := m.getScreenLinePlain(cols, row)
+				oldHashes[row] = hashLine(plainLine)
 				oldRenderedLines[row] = m.renderScreenLine(cols, row)
 			}
 
-			m.vt.Write(msg.Data)
+			// Write all buffered data at once
+			m.vt.Write(data)
 
-			// Detect scroll by checking where new top line was in old screen
-			newTopLine := m.getScreenLinePlain(cols, 0)
+			// Detect scroll using hash comparison (O(n) instead of O(n²))
+			newTopHash := hashLine(m.getScreenLinePlain(cols, 0))
 			scrollAmount := -1
 			for i := 0; i < rows; i++ {
-				if oldPlainLines[i] == newTopLine {
+				if oldHashes[i] == newTopHash {
 					scrollAmount = i
 					break
 				}
@@ -117,23 +157,33 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 			// Add scrolled lines to scrollback
 			if scrollAmount == -1 {
+				// Full screen scroll - add all non-empty lines
 				for i := 0; i < rows; i++ {
-					if oldPlainLines[i] != "" {
+					plainLine := m.getScreenLinePlain(cols, i)
+					if plainLine != "" {
 						m.scrollback = append(m.scrollback, oldRenderedLines[i])
+						m.scrollbackHash = append(m.scrollbackHash, oldHashes[i])
 					}
 				}
 			} else if scrollAmount > 0 {
+				// Partial scroll - add scrolled lines
 				for i := 0; i < scrollAmount; i++ {
 					m.scrollback = append(m.scrollback, oldRenderedLines[i])
+					m.scrollbackHash = append(m.scrollbackHash, oldHashes[i])
 				}
 			}
 
+			// Trim scrollback if too large
 			if len(m.scrollback) > m.maxScrollback {
-				m.scrollback = m.scrollback[len(m.scrollback)-m.maxScrollback:]
+				excess := len(m.scrollback) - m.maxScrollback
+				m.scrollback = m.scrollback[excess:]
+				m.scrollbackHash = m.scrollbackHash[excess:]
 			}
 		}
 		m.mu.Unlock()
-		return m, nil
+
+		// Continue reading output
+		return m, m.ContinueReading()
 
 	case ExitMsg:
 		m.mu.Lock()
@@ -350,17 +400,14 @@ func (m Model) View() string {
 	}
 
 	// Render the virtual terminal screen
-	var content string
 	if m.vt != nil {
-		content = m.renderVT()
-	} else {
-		content = lipgloss.NewStyle().
-			Foreground(theme.MutedLavender).
-			Italic(true).
-			Render("Terminal ready...")
+		return m.renderVT()
 	}
 
-	return content
+	return lipgloss.NewStyle().
+		Foreground(theme.MutedLavender).
+		Italic(true).
+		Render("Terminal ready...")
 }
 
 // renderVT renders the virtual terminal screen buffer with colors
@@ -527,6 +574,13 @@ func (m Model) getScreenLinePlain(cols, row int) string {
 		result.WriteRune(ch)
 	}
 	return strings.TrimRight(result.String(), " ")
+}
+
+// hashLine computes FNV-1a hash of a string for O(1) comparison
+func hashLine(s string) uint64 {
+	h := fnv.New64a()
+	h.Write([]byte(s))
+	return h.Sum64()
 }
 
 // getTopLine returns the current top line of the terminal as plain text (no ANSI codes)
