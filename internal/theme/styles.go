@@ -1,6 +1,12 @@
 package theme
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Border definitions
 var (
@@ -254,3 +260,212 @@ func RenderTitle(title string, focused bool) string {
 
 	return diamond + "─[ " + titleStyle.Render(title) + " ]─"
 }
+
+// FormatScrollIndicator returns a formatted scroll percentage indicator.
+// Returns empty string if percent is 100 (at bottom) or invalid.
+func FormatScrollIndicator(percent float64) string {
+	if percent >= 99.9 || percent < 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d%%", int(percent))
+}
+
+// FormatStatusIndicator returns a running/idle status indicator.
+func FormatStatusIndicator(running bool) string {
+	if running {
+		return StatusRunning
+	}
+	return StatusIdle
+}
+
+// PanelTitleOptions configures what to show in panel borders.
+type PanelTitleOptions struct {
+	Title         string  // Main title text (e.g., "FILES", "Claude")
+	StatusRunning bool    // Show running indicator (●) vs idle (○)
+	ShowStatus    bool    // Whether to show status at all
+	ScrollPercent float64 // Scroll position (0-100), negative to hide
+	BottomHints   string  // Key hints for bottom border (e.g., "↑↓:scroll  q:quit")
+}
+
+// RenderPanelWithTitle renders content in a panel with title embedded in the border.
+func RenderPanelWithTitle(content string, opts PanelTitleOptions, width, height int, focused bool) string {
+	if width < 4 || height < 2 {
+		return ""
+	}
+
+	// Choose border style and colors based on focus
+	var border lipgloss.Border
+	var borderColor lipgloss.Color
+	var titleColor lipgloss.Color
+
+	if focused {
+		border = NeonBorder
+		borderColor = MagentaBlaze
+		titleColor = CyberCyan
+	} else {
+		border = GlowBorder
+		borderColor = DimPurple
+		titleColor = DimPurple
+	}
+
+	borderStyle := lipgloss.NewStyle().Foreground(borderColor)
+	titleStyle := lipgloss.NewStyle().Foreground(titleColor).Bold(true)
+	hintStyle := lipgloss.NewStyle().Foreground(MutedLavender)
+	scrollStyle := lipgloss.NewStyle().Foreground(DimPurple)
+	statusStyle := lipgloss.NewStyle().Foreground(MatrixGreen)
+	if !opts.StatusRunning {
+		statusStyle = lipgloss.NewStyle().Foreground(DimPurple)
+	}
+
+	// Calculate inner width (minus 2 for side borders)
+	innerWidth := width - 2
+
+	// Build top border with title
+	topBorder := buildTopBorder(border, borderStyle, titleStyle, scrollStyle, statusStyle, opts, innerWidth)
+
+	// Build bottom border with hints
+	bottomBorder := buildBottomBorder(border, borderStyle, hintStyle, opts.BottomHints, innerWidth)
+
+	// Build content area
+	contentHeight := height - 2 // Account for top and bottom borders
+	if contentHeight < 0 {
+		contentHeight = 0
+	}
+
+	// Split content into lines and pad/truncate to fit
+	contentLines := strings.Split(content, "\n")
+	renderedLines := make([]string, contentHeight)
+
+	// Style for truncating lines with ANSI codes
+	lineStyle := lipgloss.NewStyle().MaxWidth(innerWidth)
+
+	for i := 0; i < contentHeight; i++ {
+		var line string
+		if i < len(contentLines) {
+			line = contentLines[i]
+		}
+		// Truncate line (handles ANSI codes properly)
+		line = lineStyle.Render(line)
+		// Pad to fill width
+		lineLen := lipgloss.Width(line)
+		if lineLen < innerWidth {
+			line = line + strings.Repeat(" ", innerWidth-lineLen)
+		}
+		renderedLines[i] = borderStyle.Render(border.Left) + line + borderStyle.Render(border.Right)
+	}
+
+	// Join all parts
+	var result strings.Builder
+	result.WriteString(topBorder)
+	result.WriteString("\n")
+	result.WriteString(strings.Join(renderedLines, "\n"))
+	result.WriteString("\n")
+	result.WriteString(bottomBorder)
+
+	return result.String()
+}
+
+// buildTopBorder creates the top border with title and optional scroll/status indicators.
+func buildTopBorder(border lipgloss.Border, borderStyle, titleStyle, scrollStyle, statusStyle lipgloss.Style, opts PanelTitleOptions, innerWidth int) string {
+	// Format the title segment: "[ Title ● ]" or "[ Title ]"
+	titleText := opts.Title
+	if opts.ShowStatus {
+		status := FormatStatusIndicator(opts.StatusRunning)
+		titleText = titleText + " " + statusStyle.Render(status)
+	}
+	titleSegment := "[ " + titleStyle.Render(opts.Title)
+	if opts.ShowStatus {
+		titleSegment += " " + statusStyle.Render(FormatStatusIndicator(opts.StatusRunning))
+	}
+	titleSegment += " ]"
+
+	// Format scroll indicator if applicable
+	var scrollSegment string
+	if opts.ScrollPercent >= 0 && opts.ScrollPercent < 99.9 {
+		scrollText := FormatScrollIndicator(opts.ScrollPercent)
+		if scrollText != "" {
+			scrollSegment = "[ " + scrollStyle.Render(scrollText) + " ]"
+		}
+	}
+
+	// Calculate visible widths (without ANSI codes)
+	titleWidth := utf8.RuneCountInString(stripAnsi(titleSegment))
+	scrollWidth := 0
+	if scrollSegment != "" {
+		scrollWidth = utf8.RuneCountInString(stripAnsi(scrollSegment))
+	}
+
+	// Calculate filler lengths
+	leftFiller := 2 // Small gap after corner
+	rightFiller := innerWidth - leftFiller - titleWidth - scrollWidth
+	if rightFiller < 0 {
+		rightFiller = 0
+	}
+
+	// Build the border
+	var result strings.Builder
+	result.WriteString(borderStyle.Render(border.TopLeft))
+	result.WriteString(borderStyle.Render(strings.Repeat(border.Top, leftFiller)))
+	result.WriteString(titleSegment)
+	if scrollSegment != "" {
+		result.WriteString(borderStyle.Render(strings.Repeat(border.Top, rightFiller-scrollWidth)))
+		result.WriteString(scrollSegment)
+		result.WriteString(borderStyle.Render(strings.Repeat(border.Top, scrollWidth)))
+	} else {
+		result.WriteString(borderStyle.Render(strings.Repeat(border.Top, rightFiller)))
+	}
+	result.WriteString(borderStyle.Render(border.TopRight))
+
+	return result.String()
+}
+
+// buildBottomBorder creates the bottom border with optional key hints.
+func buildBottomBorder(border lipgloss.Border, borderStyle, hintStyle lipgloss.Style, hints string, innerWidth int) string {
+	if hints == "" {
+		// Simple border without hints
+		return borderStyle.Render(border.BottomLeft) +
+			borderStyle.Render(strings.Repeat(border.Bottom, innerWidth)) +
+			borderStyle.Render(border.BottomRight)
+	}
+
+	// Format hint segment
+	hintSegment := "[ " + hintStyle.Render(hints) + " ]"
+	hintWidth := utf8.RuneCountInString(stripAnsi(hintSegment))
+
+	// Calculate filler lengths
+	leftFiller := 2
+	rightFiller := innerWidth - leftFiller - hintWidth
+	if rightFiller < 0 {
+		rightFiller = 0
+	}
+
+	var result strings.Builder
+	result.WriteString(borderStyle.Render(border.BottomLeft))
+	result.WriteString(borderStyle.Render(strings.Repeat(border.Bottom, leftFiller)))
+	result.WriteString(hintSegment)
+	result.WriteString(borderStyle.Render(strings.Repeat(border.Bottom, rightFiller)))
+	result.WriteString(borderStyle.Render(border.BottomRight))
+
+	return result.String()
+}
+
+// stripAnsi removes ANSI escape sequences from a string.
+func stripAnsi(s string) string {
+	var result strings.Builder
+	inEscape := false
+	for _, r := range s {
+		if r == '\x1b' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEscape = false
+			}
+			continue
+		}
+		result.WriteRune(r)
+	}
+	return result.String()
+}
+

@@ -565,7 +565,24 @@ func (m Model) View() string {
 	// Handle fullscreen mode (content only)
 	if m.fullscreen == PanelContent {
 		statusBar := m.renderStatusBar()
-		panel := m.renderFullscreenPanel(m.content.View(), "", true)
+		title, scrollPercent := m.content.TitleInfo()
+		isRunning := m.content.IsTerminalRunning()
+		mode := m.content.Mode()
+
+		opts := theme.PanelTitleOptions{
+			Title:         title,
+			StatusRunning: isRunning,
+			ShowStatus:    mode == content.ModeAI || mode == content.ModeTerminal,
+			ScrollPercent: scrollPercent,
+		}
+
+		panel := theme.RenderPanelWithTitle(
+			m.content.ContentView(),
+			opts,
+			m.width,
+			m.height-1,
+			true,
+		)
 		view = lipgloss.JoinVertical(lipgloss.Left, panel, statusBar)
 	} else {
 		// Render panels
@@ -602,57 +619,82 @@ func (m Model) View() string {
 
 // renderLeftPanel renders the file tree panel.
 func (m Model) renderLeftPanel() string {
-	style := theme.GetPanelStyle(m.focus == PanelFileTree).
-		Width(m.layout.LeftWidth - 2).
-		Height(m.layout.MainHeight - 2)
+	focused := m.focus == PanelFileTree
 
-	title := theme.RenderTitle("FILES", m.focus == PanelFileTree)
+	var bottomHints string
+	if focused {
+		bottomHints = "↑↓:nav  enter:open"
+	}
 
-	return style.Render(lipgloss.JoinVertical(lipgloss.Left,
-		title,
+	opts := theme.PanelTitleOptions{
+		Title:         "FILES",
+		ScrollPercent: m.fileTree.ScrollPercent(),
+		BottomHints:   bottomHints,
+	}
+
+	return theme.RenderPanelWithTitle(
 		m.fileTree.View(),
-	))
+		opts,
+		m.layout.LeftWidth,
+		m.layout.MainHeight,
+		focused,
+	)
 }
 
 // renderRightPanel renders the content panel.
 func (m Model) renderRightPanel() string {
-	style := theme.GetPanelStyle(m.focus == PanelContent).
-		Width(m.layout.RightWidth - 2).
-		Height(m.layout.MainHeight - 2)
+	focused := m.focus == PanelContent
 
-	return style.Render(m.content.View())
+	title, scrollPercent := m.content.TitleInfo()
+	isRunning := m.content.IsTerminalRunning()
+	mode := m.content.Mode()
+
+	// Determine bottom hints based on mode (only when focused)
+	var bottomHints string
+	if focused {
+		switch mode {
+		case content.ModeViewer:
+			bottomHints = "↑↓:scroll"
+		case content.ModeDiff:
+			bottomHints = "↑↓:scroll"
+		}
+	}
+
+	opts := theme.PanelTitleOptions{
+		Title:         title,
+		StatusRunning: isRunning,
+		ShowStatus:    mode == content.ModeAI || mode == content.ModeTerminal,
+		ScrollPercent: scrollPercent,
+		BottomHints:   bottomHints,
+	}
+
+	return theme.RenderPanelWithTitle(
+		m.content.ContentView(),
+		opts,
+		m.layout.RightWidth,
+		m.layout.MainHeight,
+		focused,
+	)
 }
 
 // renderMiniBuffer renders the mini buffer panel.
 func (m Model) renderMiniBuffer() string {
-	style := theme.GetPanelStyle(m.focus == PanelMiniBuffer).
-		Width(m.layout.TotalWidth - 2).
-		Height(m.layout.MiniHeight - 2)
+	focused := m.focus == PanelMiniBuffer
 
-	title := theme.RenderTitle("TERMINAL", m.focus == PanelMiniBuffer)
-
-	return style.Render(lipgloss.JoinVertical(lipgloss.Left,
-		title,
-		m.miniBuffer.View(),
-	))
-}
-
-// renderFullscreenPanel renders a panel in fullscreen mode.
-func (m Model) renderFullscreenPanel(content string, title string, focused bool) string {
-	// Use full width and height minus status bar
-	fullHeight := m.height - 1
-	style := theme.GetPanelStyle(focused).
-		Width(m.width - 2).
-		Height(fullHeight - 2)
-
-	if title != "" {
-		titleBar := theme.RenderTitle(title, focused)
-		return style.Render(lipgloss.JoinVertical(lipgloss.Left,
-			titleBar,
-			content,
-		))
+	opts := theme.PanelTitleOptions{
+		Title:         "TERMINAL",
+		StatusRunning: m.miniBuffer.Running(),
+		ShowStatus:    true,
+		ScrollPercent: -1, // Don't show scroll for terminal
 	}
-	return style.Render(content)
+
+	return theme.RenderPanelWithTitle(
+		m.miniBuffer.View(),
+		opts,
+		m.layout.TotalWidth,
+		m.layout.MiniHeight,
+		focused,
+	)
 }
 
 // renderStatusBar renders the status bar.

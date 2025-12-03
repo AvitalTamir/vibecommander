@@ -718,6 +718,23 @@ func (m Model) SetGitStatus(status *git.Status) Model {
 	return m
 }
 
+// ScrollPercent returns the current scroll position as a percentage (0-100).
+func (m Model) ScrollPercent() float64 {
+	if len(m.visible) == 0 {
+		return 100
+	}
+	_, h := m.Size()
+	viewportHeight := h - 3
+	if viewportHeight <= 0 {
+		return 100
+	}
+	maxOffset := len(m.visible) - viewportHeight
+	if maxOffset <= 0 {
+		return 100
+	}
+	return float64(m.offset) / float64(maxOffset) * 100
+}
+
 // Helper to sort nodes
 func sortNodes(nodes []*Node) {
 	// Simple bubble sort for small lists

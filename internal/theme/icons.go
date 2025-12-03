@@ -41,6 +41,12 @@ const (
 	PanelDiamond = "◈"
 )
 
+// Status indicators
+const (
+	StatusRunning = "●"
+	StatusIdle    = "○"
+)
+
 // Spinner frames for loading animations
 var SpinnerDots = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 var SpinnerPulse = []string{"░", "▒", "▓", "█", "▓", "▒"}

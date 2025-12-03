@@ -360,30 +360,7 @@ func (m Model) View() string {
 			Render("Terminal ready...")
 	}
 
-	// Status line
-	var status string
-	if m.running {
-		status = lipgloss.NewStyle().
-			Foreground(theme.MatrixGreen).
-			Render(" ● Running")
-	} else if m.exitErr != nil {
-		status = lipgloss.NewStyle().
-			Foreground(theme.NeonRed).
-			Render(" ● Exited with error")
-	} else if m.vt != nil {
-		status = lipgloss.NewStyle().
-			Foreground(theme.CyberCyan).
-			Render(" ○ Process ended")
-	} else {
-		status = lipgloss.NewStyle().
-			Foreground(theme.MutedLavender).
-			Render(" ○ Idle")
-	}
-
-	return lipgloss.JoinVertical(lipgloss.Left,
-		content,
-		status,
-	)
+	return content
 }
 
 // renderVT renders the virtual terminal screen buffer with colors

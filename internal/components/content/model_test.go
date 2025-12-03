@@ -84,7 +84,7 @@ func TestView(t *testing.T) {
 		assert.Contains(t, view, "VIEWER")
 	})
 
-	t.Run("renders diff placeholder", func(t *testing.T) {
+	t.Run("renders diff mode", func(t *testing.T) {
 		m := New()
 		m = m.SetSize(80, 24)
 		m.mode = ModeDiff
@@ -92,7 +92,6 @@ func TestView(t *testing.T) {
 		view := m.View()
 
 		assert.Contains(t, view, "DIFF")
-		assert.Contains(t, view, "coming soon")
 	})
 
 	t.Run("renders terminal mode", func(t *testing.T) {
@@ -103,17 +102,20 @@ func TestView(t *testing.T) {
 		view := m.View()
 
 		assert.Contains(t, view, "TERMINAL")
-		// Terminal shows "Idle" status when not running
-		assert.Contains(t, view, "Idle")
+		// Terminal shows "ready" message when not running
+		assert.Contains(t, view, "Terminal ready")
 	})
 
 	t.Run("renders AI assistant mode", func(t *testing.T) {
 		m := New()
 		m = m.SetSize(80, 24)
 		m.mode = ModeAI
+		m.aiCommand = "claude"
 
 		view := m.View()
 
+		// Note: View() still uses mode.String() which returns "AI ASSISTANT"
+		// The AI command name is used via AICommandName() for the title bar
 		assert.Contains(t, view, "AI ASSISTANT")
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/components/content/diff"
@@ -78,6 +79,7 @@ type Model struct {
 	diff     diff.Model
 
 	currentPath string
+	aiCommand   string // Stores the AI command name (e.g., "claude", "aider")
 	gitProvider git.Provider
 	theme       *theme.Theme
 }
@@ -123,6 +125,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case LaunchAIMsg:
 		m.mode = ModeAI
+		m.aiCommand = msg.Command // Store the AI command name
 		// Focus the terminal since we're switching to AI mode
 		m.terminal = m.terminal.Focus()
 		// Start the AI command
@@ -383,4 +386,58 @@ func readFile(path string) (string, error) {
 // IsTerminalRunning returns true if the terminal is running a process.
 func (m Model) IsTerminalRunning() bool {
 	return (m.mode == ModeTerminal || m.mode == ModeAI) && m.terminal.Running()
+}
+
+// AICommandName returns the capitalized AI command name (e.g., "Claude", "Aider").
+func (m Model) AICommandName() string {
+	if m.aiCommand == "" {
+		return "AI"
+	}
+	// Capitalize first letter
+	return strings.ToUpper(m.aiCommand[:1]) + m.aiCommand[1:]
+}
+
+// ContentView returns just the inner content without any title or border.
+// This is used by app.go to wrap content with the new border system.
+func (m Model) ContentView() string {
+	switch m.mode {
+	case ModeViewer:
+		return m.viewer.View()
+	case ModeDiff:
+		return m.diff.View()
+	case ModeTerminal, ModeAI:
+		return m.terminal.View()
+	default:
+		return ""
+	}
+}
+
+// TitleInfo returns the title text and scroll percent for the current mode.
+func (m Model) TitleInfo() (title string, scrollPercent float64) {
+	switch m.mode {
+	case ModeViewer:
+		if m.currentPath != "" {
+			title = filepath.Base(m.currentPath)
+		} else {
+			title = "VIEWER"
+		}
+		scrollPercent = m.viewer.ScrollPercent()
+	case ModeDiff:
+		if m.currentPath != "" {
+			title = filepath.Base(m.currentPath)
+		} else {
+			title = "DIFF"
+		}
+		scrollPercent = m.diff.ScrollPercent()
+	case ModeAI:
+		title = m.AICommandName()
+		scrollPercent = -1 // Don't show scroll for terminal
+	case ModeTerminal:
+		title = "TERMINAL"
+		scrollPercent = -1
+	default:
+		title = "CONTENT"
+		scrollPercent = -1
+	}
+	return
 }
