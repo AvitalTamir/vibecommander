@@ -12,15 +12,10 @@
 
 <img width="1712" height="1115" alt="Xnapper-2025-12-03-21 57 15" src="https://github.com/user-attachments/assets/03605818-ce17-4ddb-b013-ce5ad4019d0e" />
 
-## Why Vibe Commander?
+## Why an IVE?
 
-You're pair programming with an AI. You need to:
-- Show it a file → *switch tab*
-- Check what changed → *switch tab*
-- Run a command → *switch tab*
-- Go back to the conversation → *switch tab*
-
-**Stop. Switching. Tabs.**
+I pretty much do everything with Claude Code nowadays, my flow's ALMOST perfect except I occasionally switch over to another terminal tab to use git or look at a file.
+That's why I build Vice Commander.
 
 Vibe Commander gives you everything in one view. Browse files, read code with syntax highlighting, watch your git status, run commands, and chat with your AI—all without your fingers leaving the keyboard.
 
