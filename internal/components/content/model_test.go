@@ -171,10 +171,10 @@ func TestScrollPercent(t *testing.T) {
 	m := New()
 	m = m.SetSize(80, 24)
 
-	// With empty content, returns valid scroll percent
+	// With empty content, returns valid scroll percent (0-100)
 	percent := m.ScrollPercent()
 	assert.GreaterOrEqual(t, percent, 0.0)
-	assert.LessOrEqual(t, percent, 1.0)
+	assert.LessOrEqual(t, percent, 100.0)
 }
 
 func TestIntegration(t *testing.T) {

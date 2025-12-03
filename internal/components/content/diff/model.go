@@ -273,9 +273,9 @@ func (m Model) SetSize(width, height int) Model {
 	return m
 }
 
-// ScrollPercent returns the current scroll position as a percentage.
+// ScrollPercent returns the current scroll position as a percentage (0-100).
 func (m Model) ScrollPercent() float64 {
-	return m.viewport.ScrollPercent()
+	return m.viewport.ScrollPercent() * 100
 }
 
 // Helper to pad line numbers

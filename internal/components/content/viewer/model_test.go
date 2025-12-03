@@ -214,10 +214,10 @@ func TestScrollPercent(t *testing.T) {
 	m := New()
 	m = m.SetSize(80, 24)
 
-	// With empty content, viewport returns 1.0 (at "bottom" of nothing)
+	// With empty content, viewport returns 100 (at "bottom" of nothing)
 	percent := m.ScrollPercent()
 	assert.GreaterOrEqual(t, percent, 0.0)
-	assert.LessOrEqual(t, percent, 1.0)
+	assert.LessOrEqual(t, percent, 100.0)
 }
 
 func TestPath(t *testing.T) {

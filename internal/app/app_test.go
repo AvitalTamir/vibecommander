@@ -85,44 +85,6 @@ func TestModelUpdate(t *testing.T) {
 		assert.False(t, model.showQuit)
 	})
 
-	t.Run("Tab cycles focus forward", func(t *testing.T) {
-		m := New()
-		m.width = 100
-		m.height = 40
-		m.ready = true
-
-		assert.Equal(t, PanelFileTree, m.Focus())
-
-		newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
-
-		assert.Equal(t, PanelContent, newModel.(Model).Focus())
-	})
-
-	t.Run("Tab cycles back to first panel", func(t *testing.T) {
-		m := New()
-		m.width = 100
-		m.height = 40
-		m.ready = true
-		m.focus = PanelContent
-
-		newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
-
-		assert.Equal(t, PanelFileTree, newModel.(Model).Focus())
-	})
-
-	t.Run("Tab includes mini buffer when visible", func(t *testing.T) {
-		m := New()
-		m.width = 100
-		m.height = 40
-		m.ready = true
-		m.miniVisible = true
-		m.focus = PanelContent
-
-		newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
-
-		assert.Equal(t, PanelMiniBuffer, newModel.(Model).Focus())
-	})
-
 	t.Run("ToggleMiniBufferMsg toggles visibility", func(t *testing.T) {
 		m := New()
 		m.width = 100
@@ -174,7 +136,7 @@ func TestModelView(t *testing.T) {
 
 		assert.Contains(t, view, "FILES")
 		assert.Contains(t, view, "VIEWER") // Content pane shows current mode
-		assert.Contains(t, view, "Vibe Commander")
+		assert.Contains(t, view, "v0.1.0") // Version in status bar
 	})
 
 	t.Run("renders mini buffer when visible", func(t *testing.T) {
@@ -197,50 +159,13 @@ func TestModelView(t *testing.T) {
 	})
 }
 
-func TestCycleFocus(t *testing.T) {
-	t.Run("cycles forward without mini buffer", func(t *testing.T) {
-		m := New()
-		m.miniVisible = false
-
-		m = m.cycleFocus(1)
-		assert.Equal(t, PanelContent, m.Focus())
-
-		m = m.cycleFocus(1)
-		assert.Equal(t, PanelFileTree, m.Focus())
-	})
-
-	t.Run("cycles backward without mini buffer", func(t *testing.T) {
-		m := New()
-		m.miniVisible = false
-
-		m = m.cycleFocus(-1)
-		assert.Equal(t, PanelContent, m.Focus())
-
-		m = m.cycleFocus(-1)
-		assert.Equal(t, PanelFileTree, m.Focus())
-	})
-
-	t.Run("cycles through all panels with mini buffer", func(t *testing.T) {
-		m := New()
-		m.miniVisible = true
-
-		m = m.cycleFocus(1)
-		assert.Equal(t, PanelContent, m.Focus())
-
-		m = m.cycleFocus(1)
-		assert.Equal(t, PanelMiniBuffer, m.Focus())
-
-		m = m.cycleFocus(1)
-		assert.Equal(t, PanelFileTree, m.Focus())
-	})
-}
-
 func TestDefaultKeyMap(t *testing.T) {
 	km := DefaultKeyMap()
 
 	assert.NotEmpty(t, km.Quit.Keys())
 	assert.NotEmpty(t, km.Help.Keys())
-	assert.NotEmpty(t, km.FocusNext.Keys())
+	assert.NotEmpty(t, km.FocusTree.Keys())
+	assert.NotEmpty(t, km.FocusContent.Keys())
 	assert.NotEmpty(t, km.Up.Keys())
 	assert.NotEmpty(t, km.Down.Keys())
 	assert.NotEmpty(t, km.Enter.Keys())

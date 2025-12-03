@@ -628,7 +628,7 @@ func (m Model) renderLeftPanel() string {
 
 	opts := theme.PanelTitleOptions{
 		Title:         "FILES",
-		ScrollPercent: m.fileTree.ScrollPercent(),
+		ScrollPercent: -1, // Don't show scroll indicator
 		BottomHints:   bottomHints,
 	}
 
