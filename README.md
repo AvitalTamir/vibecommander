@@ -1,82 +1,82 @@
 # Vibe Commander
 
-A minimal TUI for working with AI coding assistants. View files, check git status, and run your AI assistant—all without jumping between terminal tabs.
+### IVE - Integrated Vibe Environment
 
-Built with Go and [Bubble Tea](https://github.com/charmbracelet/bubbletea).
+> Your AI pair programming command center. One screen. Zero context switching. Pure vibes.
 
-## The Problem
-
-When working with AI assistants like Claude, you constantly need to:
-- Check file contents to give context
-- Look at git status to see what's changed
-- Run terminal commands
-- Switch back to the AI conversation
-
-That's a lot of `Cmd+Tab` or terminal tab switching. Vibe Commander puts everything in one place.
-
-## What It Does
+<p align="center">
+  <img src="https://img.shields.io/badge/built%20with-go-00ADD8?style=flat-square" alt="Built with Go">
+  <img src="https://img.shields.io/badge/vibes-immaculate-ff69b4?style=flat-square" alt="Vibes: Immaculate">
+  <img src="https://img.shields.io/badge/tabs-who%20needs%20em-purple?style=flat-square" alt="Tabs: Who needs em">
+</p>
 
 ```
-┌─────────────┬──────────────────────────────────────┐
-│ FILES       │ VIEWER                               │
-│             │                                      │
-│ ├── src/    │ (file contents with syntax           │
-│ │   ├── ... │  highlighting and search)            │
-│ │   └── ... │                                      │
-│ └── ...     │                                      │
-├─────────────┴──────────────────────────────────────┤
-│ TERMINAL                                           │
-│ (integrated shell / AI assistant)                  │
-└────────────────────────────────────────────────────┘
+┌─ FILES ─────────┬─ Claude ──────────────────── 47% ─┐
+│ 📁 src/         │                                   │
+│  ├─ 📄 main.go  │  I've updated the function to     │
+│  └─ 📁 utils/   │  handle edge cases. The changes   │
+│ 📁 tests/       │  are in utils/parser.go...        │
+│ 📄 go.mod       │                                   │
+├─ TERMINAL ● ────────────────────────────────────────┤
+│ $ go test ./...                                     │
+│ ok   myproject/utils  0.042s                        │
+└─────────────────────────────────────────────────────┘
 ```
 
-- **File tree** on the left - browse and select files
-- **Viewer** on the right - see file contents with syntax highlighting
-- **Terminal** at the bottom - run commands or your AI assistant
-- **Git status** in the status bar and file tree
+## Why Vibe Commander?
 
-## Installation
+You're pair programming with an AI. You need to:
+- Show it a file → *switch tab*
+- Check what changed → *switch tab*
+- Run a command → *switch tab*
+- Go back to the conversation → *switch tab*
+
+**Stop. Switching. Tabs.**
+
+Vibe Commander gives you everything in one view. Browse files, read code with syntax highlighting, watch your git status, run commands, and chat with your AI—all without your fingers leaving the keyboard.
+
+## Quick Start
 
 ```bash
+# Install
 go install github.com/avitaltamir/vibecommander/cmd/vc@latest
+
+# Run
+vc
+
+# Launch with Claude (or your AI of choice)
+# Press Alt+A once IVE is running
 ```
 
-Or build from source:
+## The Layout
 
-```bash
-git clone https://github.com/avitaltamir/vibecommander.git
-cd vibecommander
-go build -o vc ./cmd/vc
-```
+| Panel | What it does |
+|-------|-------------|
+| **File Tree** | Browse your project. Git status baked in—green for staged, yellow for modified, purple for untracked. |
+| **Viewer** | Syntax-highlighted code. Regex search. Diff view for modified files. |
+| **Terminal** | A real shell. Run tests, git commands, or fire up your AI assistant. |
 
 ## Keybindings
 
-### Panels
+### Panel Control
 | Key | Action |
 |-----|--------|
-| `Alt+1` | Focus file tree |
-| `Alt+2` | Focus viewer (press again for fullscreen) |
+| `Alt+1` | Jump to file tree |
+| `Alt+2` | Jump to viewer (again for fullscreen) |
 | `Alt+3` | Toggle terminal |
-| `Alt+A` | Launch AI assistant (runs `claude` command) |
+| `Alt+A` | Launch AI assistant |
 
 ### Navigation
 | Key | Action |
 |-----|--------|
-| `↑/k`, `↓/j` | Move up/down |
-| `←/h`, `→/l` | Collapse/expand directories |
-| `Enter` | Open file or toggle directory |
-| `PgUp/PgDn` | Page up/down |
-| `g/G` | Go to top/bottom |
+| `↑/k` `↓/j` | Move up/down |
+| `←/h` `→/l` | Collapse/expand |
+| `Enter` | Open file / toggle dir |
+| `g/G` | Top/bottom |
+| `/` | Search (regex) |
+| `n/p` | Next/prev match |
 
-### Search (in viewer)
-| Key | Action |
-|-----|--------|
-| `/` | Open search (regex supported) |
-| `Enter` | Execute search |
-| `n/p` | Next/previous match |
-| `Esc` | Clear search |
-
-### General
+### System
 | Key | Action |
 |-----|--------|
 | `Alt+T` | Cycle theme |
@@ -85,29 +85,35 @@ go build -o vc ./cmd/vc
 
 ## Themes
 
-Press `Alt+T` to cycle through themes:
+Because your terminal should match your aesthetic.
 
-- **Midnight Miami** - Neon pink and cyan on deep purple
-- **Piña Colada** - Tropical sunset vibes
-- **Lobster Boy** - Fresh from the seafood shack
-- **Feral Jungle** - Deep in the rainforest
-- **Vampire Weekend** - Gothic but make it indie
+| Theme | Vibe |
+|-------|------|
+| **Midnight Miami** | Neon pink + cyan on deep purple. Synthwave dreams. |
+| **Piña Colada** | Tropical sunset. Vacation mode activated. |
+| **Lobster Boy** | Fresh from the seafood shack. Classy crustacean. |
+| **Feral Jungle** | Deep rainforest. Touch grass, but make it terminal. |
+| **Vampire Weekend** | Gothic but make it indie. Dark academia core. |
 
-## Git Integration
-
-The file tree shows git status at a glance:
-- **Green** - staged
-- **Yellow** - modified (unstaged)
-- **Purple** - untracked
-
-The status bar shows your current branch and ahead/behind status.
+Cycle through with `Alt+T`.
 
 ## Requirements
 
 - Go 1.24+
-- Terminal with 256 color support
-- A nerd font for file icons (optional)
+- 256-color terminal
+- A [Nerd Font](https://www.nerdfonts.com/) for file icons (optional but recommended)
 
-## License
+## Building from Source
 
-MIT
+```bash
+git clone https://github.com/avitaltamir/vibecommander.git
+cd vibecommander
+go build -o vc ./cmd/vc
+./vc
+```
+
+---
+
+Built with pure vibes.
+
+MIT License
