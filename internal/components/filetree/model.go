@@ -156,9 +156,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m.handleKey(msg)
 
 	case tea.MouseMsg:
-		if !m.Focused() {
-			return m, nil
-		}
+		// Always handle mouse events - app.go handles focus management
+		// This allows click-to-select even when the panel wasn't focused
 		return m.handleMouse(msg)
 	}
 
