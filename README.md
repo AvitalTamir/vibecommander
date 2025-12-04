@@ -68,6 +68,8 @@ vc
 | `Ctrl+H` | Help |
 | `Ctrl+Q` | Quit |
 
+> **Mac users:** Works with both Option and Alt—no terminal config needed.
+
 ## Themes
 
 Because your terminal should match your aesthetic.

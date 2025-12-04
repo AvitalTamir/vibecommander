@@ -46,15 +46,15 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("ctrl+h", "help"),
 		),
 		FocusTree: key.NewBinding(
-			key.WithKeys("alt+1"),
+			key.WithKeys("alt+1", "¡"), // ¡ = Option+1 on Mac
 			key.WithHelp("M-1", "focus tree"),
 		),
 		FocusContent: key.NewBinding(
-			key.WithKeys("alt+2"),
+			key.WithKeys("alt+2", "™"), // ™ = Option+2 on Mac
 			key.WithHelp("M-2", "focus content"),
 		),
 		ToggleMini: key.NewBinding(
-			key.WithKeys("alt+3"),
+			key.WithKeys("alt+3", "£"), // £ = Option+3 on Mac
 			key.WithHelp("M-3", "toggle terminal"),
 		),
 
@@ -108,13 +108,13 @@ func DefaultKeyMap() KeyMap {
 
 		// AI
 		LaunchAI: key.NewBinding(
-			key.WithKeys("alt+a"),
+			key.WithKeys("alt+a", "å"), // å = Option+a on Mac
 			key.WithHelp("M-a", "launch AI"),
 		),
 
 		// Theme
 		CycleTheme: key.NewBinding(
-			key.WithKeys("alt+t"),
+			key.WithKeys("alt+t", "†"), // † = Option+t on Mac
 			key.WithHelp("M-t", "cycle theme"),
 		),
 	}
