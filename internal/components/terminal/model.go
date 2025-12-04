@@ -212,6 +212,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			case tea.KeyTab:
 				input = []byte("\t")
+			case tea.KeyShiftTab:
+				input = []byte("\x1b[Z") // Shift+Tab (CSI Z / backtab)
 			case tea.KeySpace:
 				input = []byte(" ")
 			// Ctrl keys (Ctrl+A=1 through Ctrl+Z=26)
