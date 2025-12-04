@@ -2,8 +2,8 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -14,57 +14,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
 
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
       - name: Run tests
         run: go test -v -race ./...
 
-      - name: Bump version
-        id: bump
-        run: |
-          # Read current version
-          CURRENT_VERSION=$(cat VERSION)
-          echo "Current version: $CURRENT_VERSION"
-
-          # Parse version (remove 'v' prefix)
-          VERSION_NUM=${CURRENT_VERSION#v}
-
-          # Split into major.minor.patch
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_NUM"
-
-          # Bump minor version, reset patch
-          NEW_MINOR=$((MINOR + 1))
-          NEW_VERSION="v${MAJOR}.${NEW_MINOR}.0"
-
-          echo "New version: $NEW_VERSION"
-          echo "$NEW_VERSION" > VERSION
-
-          # Set outputs
-          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-
-      - name: Commit version bump
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add VERSION
-          git commit -m "Bump version to ${{ steps.bump.outputs.version }}" || echo "No changes to commit"
-          git push
-
       - name: Build binaries
         run: |
-          VERSION=${{ steps.bump.outputs.version }}
+          VERSION=${{ steps.version.outputs.version }}
           LDFLAGS="-X main.version=$VERSION"
 
-          # Create dist directory
           mkdir -p dist
 
-          # Build for all platforms
           # Linux
           GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/vc-linux-amd64 ./cmd/vc
           GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/vc-linux-arm64 ./cmd/vc
@@ -77,15 +46,14 @@ jobs:
           GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/vc-windows-amd64.exe ./cmd/vc
           GOOS=windows GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/vc-windows-arm64.exe ./cmd/vc
 
-          # Create checksums
+          # Checksums
           cd dist
           sha256sum * > checksums.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.bump.outputs.version }}
-          name: Release ${{ steps.bump.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: |
             dist/vc-linux-amd64
