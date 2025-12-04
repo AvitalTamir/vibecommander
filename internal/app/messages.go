@@ -4,14 +4,17 @@ package app
 type PanelID int
 
 const (
-	PanelFileTree PanelID = iota
-	PanelContent
-	PanelMiniBuffer
+	PanelNone     PanelID = iota // 0 = no panel (used for clicks outside panels)
+	PanelFileTree                // 1
+	PanelContent                 // 2
+	PanelMiniBuffer              // 3
 )
 
 // String returns the panel name for debugging.
 func (p PanelID) String() string {
 	switch p {
+	case PanelNone:
+		return "None"
 	case PanelFileTree:
 		return "FileTree"
 	case PanelContent:
