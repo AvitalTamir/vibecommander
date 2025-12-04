@@ -153,3 +153,29 @@ func TestGetGitStatusStyle(t *testing.T) {
 		})
 	}
 }
+
+func TestSetThemeIndex(t *testing.T) {
+	// Save original index to restore after test
+	originalIdx := CurrentThemeIndex()
+	defer SetThemeIndex(originalIdx)
+
+	t.Run("valid index sets theme", func(t *testing.T) {
+		ok := SetThemeIndex(2)
+		assert.True(t, ok)
+		assert.Equal(t, 2, CurrentThemeIndex())
+	})
+
+	t.Run("negative index returns false", func(t *testing.T) {
+		SetThemeIndex(0) // Reset first
+		ok := SetThemeIndex(-1)
+		assert.False(t, ok)
+		assert.Equal(t, 0, CurrentThemeIndex(), "index should not change")
+	})
+
+	t.Run("out of bounds index returns false", func(t *testing.T) {
+		SetThemeIndex(0) // Reset first
+		ok := SetThemeIndex(100)
+		assert.False(t, ok)
+		assert.Equal(t, 0, CurrentThemeIndex(), "index should not change")
+	})
+}

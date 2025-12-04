@@ -258,7 +258,7 @@ func (m Model) renderPlaceholder(text string) string {
 	w, h := m.Size()
 	style := lipgloss.NewStyle().
 		Width(w).
-		Height(h - 1).
+		Height(h-1).
 		Foreground(theme.MutedLavender).
 		Align(lipgloss.Center, lipgloss.Center)
 

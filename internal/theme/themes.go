@@ -42,6 +42,17 @@ func NextTheme() *Theme {
 	return themes[currentIndex]
 }
 
+// SetThemeIndex sets the current theme by index and applies it.
+// Returns false if index is out of bounds.
+func SetThemeIndex(index int) bool {
+	if index < 0 || index >= len(themes) {
+		return false
+	}
+	currentIndex = index
+	ApplyTheme(themes[currentIndex])
+	return true
+}
+
 // ApplyTheme sets all the global color variables to match the theme.
 func ApplyTheme(t *Theme) {
 	// Update semantic color aliases
@@ -210,4 +221,3 @@ func VampireWeekendTheme() *Theme {
 		},
 	}
 }
-

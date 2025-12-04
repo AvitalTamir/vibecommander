@@ -15,10 +15,10 @@ type Node struct {
 	Children []*Node
 	Parent   *Node
 	Depth    int
-	Loaded   bool   // Whether children have been loaded (for lazy loading)
-	Expanded bool   // Whether directory is expanded in view
-	Size     int64  // File size in bytes
-	ModTime  int64  // Modification time as unix timestamp
+	Loaded   bool  // Whether children have been loaded (for lazy loading)
+	Expanded bool  // Whether directory is expanded in view
+	Size     int64 // File size in bytes
+	ModTime  int64 // Modification time as unix timestamp
 }
 
 // NewNode creates a new node from a path.

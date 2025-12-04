@@ -14,6 +14,7 @@ import (
 	"github.com/avitaltamir/vibecommander/internal/components/terminal"
 	"github.com/avitaltamir/vibecommander/internal/git"
 	"github.com/avitaltamir/vibecommander/internal/layout"
+	"github.com/avitaltamir/vibecommander/internal/state"
 	"github.com/avitaltamir/vibecommander/internal/theme"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -71,6 +72,11 @@ type Model struct {
 	width  int
 	height int
 	ready  bool
+
+	// State persistence
+	aiLaunched      bool // Track if AI was launched this session
+	restoreAI       bool // Flag to restore AI on first window size msg
+	initialThemeIdx int  // Theme index to restore
 }
 
 // New creates a new application model.
@@ -89,18 +95,26 @@ func New() Model {
 	// Create file watcher
 	watcher, _ := fsnotify.NewWatcher()
 
+	// Load persisted state (global)
+	savedState := state.Load()
+
+	// Apply saved theme
+	theme.SetThemeIndex(savedState.ThemeIndex)
+
 	return Model{
-		fileTree:    ft,
-		content:     contentPane,
-		miniBuffer:  minibuffer.New(),
-		focus:       PanelFileTree,
-		miniVisible: false,
-		theme:       theme.DefaultTheme(),
-		keys:        DefaultKeyMap(),
-		gitProvider: gitProvider,
-		workDir:     workDir,
-		isGitRepo:   gitProvider.IsRepo(),
-		watcher:     watcher,
+		fileTree:        ft,
+		content:         contentPane,
+		miniBuffer:      minibuffer.New(),
+		focus:           PanelFileTree,
+		miniVisible:     false,
+		theme:           theme.DefaultTheme(),
+		keys:            DefaultKeyMap(),
+		gitProvider:     gitProvider,
+		workDir:         workDir,
+		isGitRepo:       gitProvider.IsRepo(),
+		watcher:         watcher,
+		restoreAI:       savedState.AIWindowOpen,
+		initialThemeIdx: savedState.ThemeIndex,
 	}
 }
 
@@ -243,9 +257,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.layout = layout.Calculate(msg.Width, msg.Height, m.miniVisible)
+		wasReady := m.ready
 		m.ready = true
 		// Update child component sizes
 		m = m.updateSizes()
+
+		// Restore AI window on first ready (if it was open before)
+		if !wasReady && m.restoreAI {
+			m.restoreAI = false // Only restore once
+			m.aiLaunched = true
+			m = m.setFocus(PanelContent)
+			return m, func() tea.Msg {
+				return content.LaunchAIMsg{
+					Command: "claude",
+					Args:    []string{},
+				}
+			}
+		}
 		return m, nil
 
 	case GitStatusMsg:
@@ -302,6 +330,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showQuit {
 			switch msg.String() {
 			case "y", "Y", "enter":
+				// Save state before quitting
+				m.saveState()
 				return m, tea.Quit
 			case "n", "N", "esc", "q":
 				m.showQuit = false
@@ -383,6 +413,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break // Let it fall through to be routed to focused component
 			}
 			// Launch AI assistant in content pane
+			m.aiLaunched = true
 			m = m.setFocus(PanelContent)
 			return m, func() tea.Msg {
 				return content.LaunchAIMsg{
@@ -909,4 +940,14 @@ func (m Model) renderQuitDialog(_ string) string {
 		lipgloss.Center,
 		quitBox,
 	)
+}
+
+// saveState persists the current application state globally.
+func (m Model) saveState() {
+	s := state.State{
+		AIWindowOpen: m.aiLaunched,
+		ThemeIndex:   theme.CurrentThemeIndex(),
+	}
+	// Ignore errors - state persistence is best-effort
+	_ = state.Save(s)
 }

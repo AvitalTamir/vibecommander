@@ -67,7 +67,6 @@ type FileLoadedMsg struct {
 	Err     error
 }
 
-
 // ErrorMsg represents an error that should be displayed.
 type ErrorMsg struct {
 	Err error
