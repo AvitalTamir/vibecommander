@@ -12,6 +12,7 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/avitaltamir/vibecommander/internal/components"
+	"github.com/avitaltamir/vibecommander/internal/selection"
 	"github.com/avitaltamir/vibecommander/internal/theme"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -47,6 +48,9 @@ type Model struct {
 	matchLines   []int // Line numbers (0-indexed) with matches
 	currentMatch int   // Current match index (-1 if none)
 
+	// Text selection
+	selection selection.Model
+
 	theme *theme.Theme
 }
 
@@ -61,6 +65,7 @@ func New() Model {
 		theme:        theme.DefaultTheme(),
 		searchInput:  ti,
 		currentMatch: -1,
+		selection:    selection.New(),
 	}
 }
 
@@ -80,7 +85,37 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseMsg:
-		// Always handle mouse for scrolling, even when not focused
+		// Handle text selection
+		switch msg.Button {
+		case tea.MouseButtonLeft:
+			switch msg.Action {
+			case tea.MouseActionPress:
+				// Start selection - convert screen coordinates to text position
+				line, col := m.screenToTextPosition(msg.X, msg.Y)
+				m.selection.StartSelection(line, col)
+				m.updateSelectionContent()
+				m.viewport.SetContent(m.renderContent())
+				return m, nil
+			case tea.MouseActionMotion:
+				// Update selection during drag
+				if m.selection.Selection.Active {
+					line, col := m.screenToTextPosition(msg.X, msg.Y)
+					m.selection.UpdateSelection(line, col)
+					m.viewport.SetContent(m.renderContent())
+					return m, nil
+				}
+			case tea.MouseActionRelease:
+				// End selection
+				if m.selection.Selection.Active {
+					line, col := m.screenToTextPosition(msg.X, msg.Y)
+					m.selection.UpdateSelection(line, col)
+					m.selection.EndSelection()
+					m.viewport.SetContent(m.renderContent())
+					return m, nil
+				}
+			}
+		}
+		// Handle mouse wheel for scrolling
 		m.viewport, cmd = m.viewport.Update(msg)
 		cmds = append(cmds, cmd)
 		return m, tea.Batch(cmds...)
@@ -103,6 +138,21 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		if !m.Focused() {
+			return m, nil
+		}
+
+		// Handle copy (Ctrl+C) when text is selected
+		if selection.IsCopyKey(msg.String()) && m.selection.HasSelection() {
+			_ = m.selection.CopyToClipboard()
+			m.selection.ClearSelection()
+			m.viewport.SetContent(m.renderContent())
+			return m, nil
+		}
+
+		// Clear selection on Escape
+		if msg.Type == tea.KeyEscape && m.selection.HasSelection() {
+			m.selection.ClearSelection()
+			m.viewport.SetContent(m.renderContent())
 			return m, nil
 		}
 
@@ -252,6 +302,9 @@ func (m Model) renderContent() string {
 		currentMatchLine = m.matchLines[m.currentMatch]
 	}
 
+	// Check if we have an active selection
+	hasSelection := m.selection.Selection.Active || m.selection.Selection.Complete
+
 	// Split both raw and highlighted content
 	rawLines := strings.Split(m.content, "\n")
 	highlightedLines := strings.Split(highlighted, "\n")
@@ -286,6 +339,10 @@ func (m Model) renderContent() string {
 			} else {
 				lineContent = highlightedLines[i]
 			}
+		} else if hasSelection && i < len(rawLines) {
+			// Render with selection highlighting (uses raw text for accurate positioning)
+			lineNum = lineNumStyle.Render(padLeft(i+1, 4))
+			lineContent = m.renderLineWithSelection(rawLines[i], i)
 		} else {
 			lineNum = lineNumStyle.Render(padLeft(i+1, 4))
 			lineContent = highlightedLines[i]
@@ -297,6 +354,61 @@ func (m Model) renderContent() string {
 		if i < len(highlightedLines)-1 {
 			result.WriteString("\n")
 		}
+	}
+
+	return result.String()
+}
+
+// renderLineWithSelection renders a line with selection highlighting.
+func (m Model) renderLineWithSelection(line string, lineNum int) string {
+	if !m.selection.Selection.Active && !m.selection.Selection.Complete {
+		return line
+	}
+
+	// Get normalized selection range
+	start, end := m.selection.Selection.Start, m.selection.Selection.End
+	// Ensure start comes before end
+	if start.Line > end.Line || (start.Line == end.Line && start.Column > end.Column) {
+		start, end = end, start
+	}
+
+	// Check if this line is within selection
+	if lineNum < start.Line || lineNum > end.Line {
+		return line
+	}
+
+	// Determine selection bounds for this line
+	selStart := 0
+	selEnd := len(line)
+
+	if lineNum == start.Line {
+		selStart = start.Column
+	}
+	if lineNum == end.Line {
+		selEnd = end.Column
+	}
+
+	// Clamp to valid range
+	if selStart < 0 {
+		selStart = 0
+	}
+	if selEnd > len(line) {
+		selEnd = len(line)
+	}
+	if selStart >= selEnd {
+		return line
+	}
+
+	// Build result with selection highlighting
+	selStyle := selection.SelectionStyle()
+	var result strings.Builder
+
+	if selStart > 0 {
+		result.WriteString(line[:selStart])
+	}
+	result.WriteString(selStyle.Render(line[selStart:selEnd]))
+	if selEnd < len(line) {
+		result.WriteString(line[selEnd:])
 	}
 
 	return result.String()
@@ -620,4 +732,42 @@ func padLeft(n, width int) string {
 		ns = " " + ns
 	}
 	return ns
+}
+
+// lineNumberWidth is the width of line numbers plus separator (" 123 │ ")
+const lineNumberWidth = 7 // 4 digits + " │ "
+
+// screenToTextPosition converts screen coordinates to text line and column.
+// Takes into account the viewport scroll offset and line number prefix.
+func (m Model) screenToTextPosition(x, y int) (line, col int) {
+	// Y coordinate: add viewport scroll offset
+	line = y + m.viewport.YOffset
+
+	// X coordinate: subtract line number prefix width
+	col = x - lineNumberWidth
+	if col < 0 {
+		col = 0
+	}
+
+	return line, col
+}
+
+// updateSelectionContent updates the selection model with the current content lines.
+func (m *Model) updateSelectionContent() {
+	if m.content == "" {
+		m.selection.SetContent(nil)
+		return
+	}
+	lines := strings.Split(m.content, "\n")
+	m.selection.SetContent(lines)
+}
+
+// HasSelection returns true if there is an active text selection.
+func (m Model) HasSelection() bool {
+	return m.selection.HasSelection()
+}
+
+// GetSelectedText returns the currently selected text.
+func (m Model) GetSelectedText() string {
+	return m.selection.GetSelectedText()
 }

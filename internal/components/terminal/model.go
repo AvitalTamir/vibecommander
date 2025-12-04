@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/avitaltamir/vibecommander/internal/components"
+	"github.com/avitaltamir/vibecommander/internal/selection"
 	"github.com/avitaltamir/vibecommander/internal/theme"
 	"github.com/hinshun/vt10x"
 	tea "github.com/charmbracelet/bubbletea"
@@ -51,6 +52,9 @@ type Model struct {
 	scrollOffset  int      // 0 = live view, >0 = scrolled up N lines
 	maxScrollback int      // Max lines to keep
 
+	// Text selection
+	selection selection.Model
+
 	theme *theme.Theme
 	ready bool
 }
@@ -60,6 +64,7 @@ func New() Model {
 	return Model{
 		theme:         theme.DefaultTheme(),
 		maxScrollback: 10000,
+		selection:     selection.New(),
 	}
 }
 
@@ -172,8 +177,32 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseMsg:
-		// Handle mouse scroll for scrollback buffer
+		// Handle text selection with left button
 		switch msg.Button {
+		case tea.MouseButtonLeft:
+			switch msg.Action {
+			case tea.MouseActionPress:
+				// Start selection
+				line, col := m.screenToTextPosition(msg.X, msg.Y)
+				m.selection.StartSelection(line, col)
+				m.updateSelectionContent()
+				return m, nil
+			case tea.MouseActionMotion:
+				// Update selection during drag
+				if m.selection.Selection.Active {
+					line, col := m.screenToTextPosition(msg.X, msg.Y)
+					m.selection.UpdateSelection(line, col)
+					return m, nil
+				}
+			case tea.MouseActionRelease:
+				// End selection
+				if m.selection.Selection.Active {
+					line, col := m.screenToTextPosition(msg.X, msg.Y)
+					m.selection.UpdateSelection(line, col)
+					m.selection.EndSelection()
+					return m, nil
+				}
+			}
 		case tea.MouseButtonWheelUp:
 			// Scroll up (into history)
 			maxScroll := len(m.scrollback)
@@ -194,6 +223,19 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		if !m.Focused() {
+			return m, nil
+		}
+
+		// Handle copy (Ctrl+C) when text is selected - copy instead of SIGINT
+		if selection.IsCopyKey(msg.String()) && m.selection.HasSelection() {
+			_ = m.selection.CopyToClipboard()
+			m.selection.ClearSelection()
+			return m, nil
+		}
+
+		// Clear selection on Escape
+		if msg.Type == tea.KeyEscape && m.selection.HasSelection() {
+			m.selection.ClearSelection()
 			return m, nil
 		}
 
@@ -412,6 +454,7 @@ func (m Model) renderVT() string {
 func (m Model) renderLiveScreen(cols, rows int) string {
 	cursor := m.vt.Cursor()
 	cursorVisible := m.vt.CursorVisible() && m.Focused()
+	hasSelection := m.selection.Selection.Active || m.selection.Selection.Complete
 
 	var result strings.Builder
 	result.Grow(rows * cols * 2)
@@ -424,6 +467,7 @@ func (m Model) renderLiveScreen(cols, rows int) string {
 		var currentFG, currentBG vt10x.Color
 		var currentMode int16
 		var currentIsCursor bool
+		var currentIsSelected bool
 		var batch strings.Builder
 		firstCell := true
 
@@ -431,7 +475,7 @@ func (m Model) renderLiveScreen(cols, rows int) string {
 			if batch.Len() == 0 {
 				return
 			}
-			result.WriteString(buildANSI(currentFG, currentBG, currentMode, currentIsCursor))
+			result.WriteString(buildANSI(currentFG, currentBG, currentMode, currentIsCursor, currentIsSelected))
 			result.WriteString(batch.String())
 			result.WriteString("\x1b[0m")
 			batch.Reset()
@@ -445,8 +489,9 @@ func (m Model) renderLiveScreen(cols, rows int) string {
 			}
 
 			isCursor := cursorVisible && col == cursor.X && row == cursor.Y
+			isSelected := hasSelection && m.selection.IsSelected(row, col)
 
-			if !firstCell && (glyph.FG != currentFG || glyph.BG != currentBG || glyph.Mode != currentMode || isCursor != currentIsCursor) {
+			if !firstCell && (glyph.FG != currentFG || glyph.BG != currentBG || glyph.Mode != currentMode || isCursor != currentIsCursor || isSelected != currentIsSelected) {
 				flushBatch()
 			}
 
@@ -454,6 +499,7 @@ func (m Model) renderLiveScreen(cols, rows int) string {
 			currentBG = glyph.BG
 			currentMode = glyph.Mode
 			currentIsCursor = isCursor
+			currentIsSelected = isSelected
 			firstCell = false
 
 			batch.WriteRune(ch)
@@ -508,7 +554,7 @@ func (m Model) renderScreenLine(cols, row int) string {
 		if batch.Len() == 0 {
 			return
 		}
-		result.WriteString(buildANSI(currentFG, currentBG, currentMode, false))
+		result.WriteString(buildANSI(currentFG, currentBG, currentMode, false, false))
 		result.WriteString(batch.String())
 		result.WriteString("\x1b[0m")
 		batch.Reset()
@@ -603,11 +649,14 @@ func looksLikeMouseSequence(s string) bool {
 }
 
 // buildANSI builds ANSI escape sequence for the given style
-func buildANSI(fg, bg vt10x.Color, mode int16, isCursor bool) string {
+func buildANSI(fg, bg vt10x.Color, mode int16, isCursor, isSelected bool) string {
 	var codes []string
 
 	if isCursor {
 		codes = append(codes, "7") // Reverse video
+	} else if isSelected {
+		// Selection styling - reverse video (swap fg/bg)
+		codes = append(codes, "7")
 	} else {
 		// Mode attributes
 		if mode&0x01 != 0 { // Reverse
@@ -732,4 +781,104 @@ func (m Model) ContinueReading() tea.Cmd {
 		return nil
 	}
 	return m.readOutput()
+}
+
+// screenToTextPosition converts screen coordinates to text line and column.
+// For terminal, coordinates map directly to the visible buffer position.
+func (m Model) screenToTextPosition(x, y int) (line, col int) {
+	// Y coordinate: adjust for scroll offset (if viewing scrollback)
+	line = y
+	if m.scrollOffset > 0 {
+		// When scrolled up, the visible lines are from scrollback
+		scrollbackLen := len(m.scrollback)
+		startIdx := scrollbackLen - m.scrollOffset
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		line = startIdx + y
+	}
+
+	// X coordinate maps directly
+	col = x
+
+	return line, col
+}
+
+// updateSelectionContent updates the selection model with all visible text content.
+func (m *Model) updateSelectionContent() {
+	if m.vt == nil {
+		m.selection.SetContent(nil)
+		return
+	}
+
+	m.vt.Lock()
+	defer m.vt.Unlock()
+
+	cols, rows := m.vt.Size()
+	if cols <= 0 || rows <= 0 {
+		m.selection.SetContent(nil)
+		return
+	}
+
+	var lines []string
+
+	// If scrolled up, include scrollback
+	if m.scrollOffset > 0 && len(m.scrollback) > 0 {
+		scrollbackLen := len(m.scrollback)
+		startIdx := scrollbackLen - m.scrollOffset
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		// Add scrollback lines (these contain ANSI codes, so extract plain text)
+		for i := startIdx; i < scrollbackLen && len(lines) < rows; i++ {
+			lines = append(lines, stripANSI(m.scrollback[i]))
+		}
+		// Add current screen lines if we have room
+		if len(lines) < rows {
+			screenRows := rows - len(lines)
+			for row := 0; row < screenRows; row++ {
+				lines = append(lines, m.getScreenLinePlain(cols, row))
+			}
+		}
+	} else {
+		// Live view - get current screen content
+		for row := 0; row < rows; row++ {
+			lines = append(lines, m.getScreenLinePlain(cols, row))
+		}
+	}
+
+	m.selection.SetContent(lines)
+}
+
+// stripANSI removes ANSI escape sequences from a string.
+func stripANSI(s string) string {
+	// Simple ANSI stripper - removes escape sequences
+	var result strings.Builder
+	i := 0
+	for i < len(s) {
+		if s[i] == '\x1b' && i+1 < len(s) && s[i+1] == '[' {
+			// Skip until we find a letter (end of sequence)
+			i += 2
+			for i < len(s) && !((s[i] >= 'A' && s[i] <= 'Z') || (s[i] >= 'a' && s[i] <= 'z')) {
+				i++
+			}
+			if i < len(s) {
+				i++ // Skip the final letter
+			}
+		} else {
+			result.WriteByte(s[i])
+			i++
+		}
+	}
+	return result.String()
+}
+
+// HasSelection returns true if there is an active text selection.
+func (m Model) HasSelection() bool {
+	return m.selection.HasSelection()
+}
+
+// GetSelectedText returns the currently selected text.
+func (m Model) GetSelectedText() string {
+	return m.selection.GetSelectedText()
 }
