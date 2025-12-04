@@ -36,6 +36,12 @@ var (
 	BgDiffHunk    = lipgloss.Color("#1A1A3E") // Hunk header background
 )
 
+// Selection Colors - Text selection highlighting
+var (
+	BgSelection   = lipgloss.Color("#3D2D5E") // Selection background
+	TextSelection = lipgloss.Color("#FFFFFF") // Selected text color
+)
+
 // Semantic Color Aliases - Use these in components for consistency
 var (
 	ColorPrimary   = MagentaBlaze

@@ -511,6 +511,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.content, cmd = m.content.Update(msg)
 		cmds = append(cmds, cmd)
 		return m, tea.Batch(cmds...)
+
+	case tea.MouseMsg:
+		// Handle mouse clicks to focus panes and interact with content
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			targetPanel := m.panelAtPosition(msg.X, msg.Y)
+			if targetPanel != 0 && targetPanel != m.focus {
+				m = m.setFocus(targetPanel)
+			}
+		}
+		// Always route mouse events to the appropriate panel for scrolling/interaction
+		cmd := m.routeMouseToPanel(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
 	}
 
 	// Route messages to focused component
@@ -950,4 +965,61 @@ func (m Model) saveState() {
 	}
 	// Ignore errors - state persistence is best-effort
 	_ = state.Save(s)
+}
+
+// panelAtPosition returns which panel contains the given screen coordinates.
+func (m Model) panelAtPosition(x, y int) PanelID {
+	// Handle fullscreen content mode
+	if m.fullscreen == PanelContent {
+		return PanelContent
+	}
+
+	// Check mini buffer first (if visible)
+	if m.miniVisible {
+		_, miniY, _, miniH := m.layout.MiniBufferBounds()
+		if y >= miniY && y < miniY+miniH {
+			return PanelMiniBuffer
+		}
+	}
+
+	// Check main panels (file tree and content)
+	_, _, leftW, mainH := m.layout.LeftPanelBounds()
+	if y < mainH {
+		if x < leftW {
+			return PanelFileTree
+		}
+		return PanelContent
+	}
+
+	return 0 // Status bar or outside panels
+}
+
+// routeMouseToPanel routes mouse events to the panel at the mouse position.
+// This allows scrolling in non-focused panels.
+func (m *Model) routeMouseToPanel(msg tea.MouseMsg) tea.Cmd {
+	var cmd tea.Cmd
+
+	targetPanel := m.panelAtPosition(msg.X, msg.Y)
+
+	// Adjust coordinates relative to panel
+	switch targetPanel {
+	case PanelFileTree:
+		m.fileTree, cmd = m.fileTree.Update(msg)
+	case PanelContent:
+		// Adjust X coordinate for content panel offset
+		leftW := m.layout.LeftWidth
+		adjustedMsg := msg
+		adjustedMsg.X = msg.X - leftW
+		m.content, cmd = m.content.Update(adjustedMsg)
+	case PanelMiniBuffer:
+		if m.miniVisible {
+			// Adjust Y coordinate for mini buffer offset
+			_, miniY, _, _ := m.layout.MiniBufferBounds()
+			adjustedMsg := msg
+			adjustedMsg.Y = msg.Y - miniY
+			m.miniBuffer, cmd = m.miniBuffer.Update(adjustedMsg)
+		}
+	}
+
+	return cmd
 }
