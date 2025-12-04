@@ -12,12 +12,13 @@
 
 <img width="1712" height="1115" alt="Xnapper-2025-12-03-21 57 15" src="https://github.com/user-attachments/assets/03605818-ce17-4ddb-b013-ce5ad4019d0e" />
 
-## Why an IVE?
+## Why?
 
-I pretty much do everything with Claude Code nowadays, my flow's ALMOST perfect except I occasionally switch over to another terminal tab to use git or look at a file.
-That's why I build Vibe Commander.
+Have been building this as a tool to bring my flow from 99% there to 100%.
 
-Vibe Commander gives you everything in one view. Browse files, read code with syntax highlighting, watch your git status, run commands, and chat with your AI—all without your fingers leaving the keyboard.
+I nowadays do pretty much everything using Claude Code and only ever hop into other terminal tabs to view the occasional file or run some git commands.
+
+Vision was to have these minimal facilities in a familiar IDE style layout (Integrated Vibe Environment?) that evokes old time Norton Commander memories.
 
 ## Quick Start
 
