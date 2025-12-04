@@ -137,7 +137,7 @@ func TestModelView(t *testing.T) {
 
 		assert.Contains(t, view, "FILES")
 		assert.Contains(t, view, "VIEWER") // Content pane shows current mode
-		assert.Contains(t, view, Version) // Version in status bar
+		assert.Contains(t, view, Version)  // Version in status bar
 	})
 
 	t.Run("renders mini buffer when visible", func(t *testing.T) {

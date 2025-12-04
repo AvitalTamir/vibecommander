@@ -11,10 +11,10 @@ import (
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/selection"
 	"github.com/avitaltamir/vibecommander/internal/theme"
-	"github.com/hinshun/vt10x"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/creack/pty"
+	"github.com/hinshun/vt10x"
 )
 
 // Messages

@@ -59,14 +59,14 @@ var FileIcons = map[string]string{
 	".sum": "󰏗",
 
 	// Web
-	".js":   "",
-	".ts":   "",
-	".tsx":  "",
-	".jsx":  "",
-	".html": "",
-	".css":  "",
-	".scss": "",
-	".vue":  "",
+	".js":     "",
+	".ts":     "",
+	".tsx":    "",
+	".jsx":    "",
+	".html":   "",
+	".css":    "",
+	".scss":   "",
+	".vue":    "",
 	".svelte": "",
 
 	// Data
@@ -77,14 +77,14 @@ var FileIcons = map[string]string{
 	".xml":  "",
 
 	// Documentation
-	".md":       "󰍔",
-	".mdx":      "󰍔",
-	".txt":      "",
-	".rst":      "",
+	".md":  "󰍔",
+	".mdx": "󰍔",
+	".txt": "",
+	".rst": "",
 
 	// Config
-	".env":        "󰈙",
-	".gitignore":  "",
+	".env":          "󰈙",
+	".gitignore":    "",
 	".dockerignore": "",
 
 	// Shell
@@ -116,7 +116,7 @@ var FileIcons = map[string]string{
 	".rake": "",
 
 	// Docker
-	"Dockerfile": "",
+	"Dockerfile":  "",
 	".dockerfile": "",
 
 	// Git

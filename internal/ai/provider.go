@@ -37,8 +37,8 @@ type Options struct {
 
 // Registry manages available AI providers.
 type Registry struct {
-	providers    map[string]Provider
-	defaultName  string
+	providers   map[string]Provider
+	defaultName string
 }
 
 // NewRegistry creates a new provider registry.
