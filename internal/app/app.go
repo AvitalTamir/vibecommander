@@ -965,6 +965,7 @@ func (m Model) saveState() {
 	}
 	// Ignore errors - state persistence is best-effort
 	_ = state.Save(s)
+}
 
 // panelAtPosition returns which panel contains the given screen coordinates.
 func (m Model) panelAtPosition(x, y int) PanelID {

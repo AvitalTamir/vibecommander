@@ -4,10 +4,10 @@ package app
 type PanelID int
 
 const (
-	PanelNone     PanelID = iota // 0 = no panel (used for clicks outside panels)
-	PanelFileTree                // 1
-	PanelContent                 // 2
-	PanelMiniBuffer              // 3
+	PanelNone       PanelID = iota // 0 = no panel (used for clicks outside panels)
+	PanelFileTree                  // 1
+	PanelContent                   // 2
+	PanelMiniBuffer                // 3
 )
 
 // String returns the panel name for debugging.

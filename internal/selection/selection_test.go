@@ -192,8 +192,8 @@ func TestIsSelected(t *testing.T) {
 func TestIsCopyKey(t *testing.T) {
 	// Copy keys should be recognized
 	assert.True(t, IsCopyKey("ctrl+c"))
-	assert.True(t, IsCopyKey("y"))       // Vim-style yank
-	assert.True(t, IsCopyKey("ctrl+y"))  // Alternative binding
+	assert.True(t, IsCopyKey("y"))      // Vim-style yank
+	assert.True(t, IsCopyKey("ctrl+y")) // Alternative binding
 
 	// Other keys should not be recognized
 	assert.False(t, IsCopyKey("c"))
