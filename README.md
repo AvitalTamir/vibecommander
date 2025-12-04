@@ -15,7 +15,7 @@
 ## Why an IVE?
 
 I pretty much do everything with Claude Code nowadays, my flow's ALMOST perfect except I occasionally switch over to another terminal tab to use git or look at a file.
-That's why I build Vice Commander.
+That's why I build Vibe Commander.
 
 Vibe Commander gives you everything in one view. Browse files, read code with syntax highlighting, watch your git status, run commands, and chat with your AI—all without your fingers leaving the keyboard.
 
