@@ -320,19 +320,19 @@ func TestModelSetShowHidden(t *testing.T) {
 	}
 	m.rebuildVisible()
 
-	// Hidden files should be hidden by default
-	assert.False(t, m.ShowHidden())
+	// Hidden files should be shown by default
+	assert.True(t, m.ShowHidden())
 	hiddenCount := 0
 	for _, n := range m.visible {
 		if n.IsHidden() && n.Parent != nil {
 			hiddenCount++
 		}
 	}
-	assert.Equal(t, 0, hiddenCount)
+	assert.Equal(t, 1, hiddenCount)
 
-	// Show hidden files
-	m.SetShowHidden(true)
-	assert.True(t, m.ShowHidden())
+	// Hide hidden files
+	m.SetShowHidden(false)
+	assert.False(t, m.ShowHidden())
 
 	hiddenCount = 0
 	for _, n := range m.visible {
@@ -340,7 +340,7 @@ func TestModelSetShowHidden(t *testing.T) {
 			hiddenCount++
 		}
 	}
-	assert.Equal(t, 1, hiddenCount)
+	assert.Equal(t, 0, hiddenCount)
 }
 
 func TestModelSetRoot(t *testing.T) {

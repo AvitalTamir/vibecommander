@@ -102,10 +102,11 @@ func New() Model {
 	cwd, _ := os.Getwd()
 
 	m := Model{
-		loading: make(map[string]bool),
-		keys:    DefaultKeyMap(),
-		theme:   theme.DefaultTheme(),
-		workDir: cwd,
+		loading:    make(map[string]bool),
+		keys:       DefaultKeyMap(),
+		theme:      theme.DefaultTheme(),
+		workDir:    cwd,
+		showHidden: true,
 	}
 
 	// Initialize root to current working directory

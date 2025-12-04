@@ -3,9 +3,13 @@
 # Binary name
 BINARY_NAME=vc
 
+# Version from VERSION file
+VERSION=$(shell cat VERSION)
+
 # Go parameters
 GOCMD=go
 GOBUILD=$(GOCMD) build
+LDFLAGS=-ldflags "-X main.version=$(VERSION)"
 GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 GOMOD=$(GOCMD) mod
@@ -21,9 +25,9 @@ all: lint test build
 
 ## Build the application
 build:
-	@echo "Building $(BINARY_NAME)..."
+	@echo "Building $(BINARY_NAME) $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
-	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PACKAGE)
+	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PACKAGE)
 
 ## Run tests
 test:

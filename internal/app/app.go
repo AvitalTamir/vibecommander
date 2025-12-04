@@ -21,6 +21,9 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+// Version is the application version, set at build time via ldflags
+var Version = "dev"
+
 // GitStatusMsg carries updated git status
 type GitStatusMsg struct {
 	Status *git.Status
@@ -757,7 +760,7 @@ func (m Model) renderStatusBar() string {
 	// Version
 	version := lipgloss.NewStyle().
 		Foreground(theme.DimPurple).
-		Render("v0.1.0")
+		Render(Version)
 
 	// Layout the status bar
 	left := branch + panelInfo + help

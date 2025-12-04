@@ -22,11 +22,27 @@ Vision was to have these minimal facilities in a familiar IDE style layout (Inte
 
 ## Quick Start
 
-```bash
-# Install
-go install github.com/avitaltamir/vibecommander/cmd/vc@latest
+### Download Binary
 
-# Run
+Grab the latest binary for your platform from the [Releases page](https://github.com/avitaltamir/vibecommander/releases/latest).
+
+Available binaries:
+- `vc-darwin-arm64` - macOS Apple Silicon
+- `vc-darwin-amd64` - macOS Intel
+- `vc-linux-arm64` - Linux ARM64
+- `vc-linux-amd64` - Linux x86_64
+- `vc-windows-arm64.exe` - Windows ARM64
+- `vc-windows-amd64.exe` - Windows x86_64
+
+### Install with Go
+
+```bash
+go install github.com/avitaltamir/vibecommander/cmd/vc@latest
+```
+
+### Run
+
+```bash
 vc
 
 # Launch with Claude (or your AI of choice)

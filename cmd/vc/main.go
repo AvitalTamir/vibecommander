@@ -8,7 +8,17 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+var version = "dev"
+
 func main() {
+	// Set the app version for display in the UI
+	app.Version = version
+
+	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version") {
+		fmt.Println("vc", version)
+		return
+	}
+
 	p := tea.NewProgram(
 		app.New(),
 		tea.WithAltScreen(),

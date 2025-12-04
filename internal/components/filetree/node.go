@@ -165,6 +165,11 @@ func (n *Node) Flatten(showHidden bool) []*Node {
 }
 
 func (n *Node) flattenInto(result *[]*Node, showHidden bool) {
+	// Always skip .git directory
+	if n.Name == ".git" && n.IsDir && n.Parent != nil {
+		return
+	}
+
 	if !showHidden && n.IsHidden() && n.Parent != nil {
 		return // Skip hidden files (but not root)
 	}
