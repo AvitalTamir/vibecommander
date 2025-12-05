@@ -11,6 +11,10 @@ type KeyMap struct {
 	FocusContent key.Binding
 	ToggleMini   key.Binding
 
+	// Panel resize
+	ShrinkTree key.Binding
+	WidenTree  key.Binding
+
 	// Navigation
 	Up       key.Binding
 	Down     key.Binding
@@ -56,6 +60,16 @@ func DefaultKeyMap() KeyMap {
 		ToggleMini: key.NewBinding(
 			key.WithKeys("alt+3", "£"), // £ = Option+3 on Mac
 			key.WithHelp("M-3", "toggle terminal"),
+		),
+
+		// Panel resize
+		ShrinkTree: key.NewBinding(
+			key.WithKeys("alt+[", "\u201c"), // " (U+201C) = Option+[ on Mac
+			key.WithHelp("M-[", "shrink tree"),
+		),
+		WidenTree: key.NewBinding(
+			key.WithKeys("alt+]", "\u2018"), // ' (U+2018) = Option+] on Mac
+			key.WithHelp("M-]", "widen tree"),
 		),
 
 		// Navigation
@@ -132,6 +146,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.PageUp, k.PageDown, k.Home, k.End},
 		{k.Enter, k.Back, k.Delete},
 		{k.FocusTree, k.FocusContent, k.ToggleMini},
+		{k.ShrinkTree, k.WidenTree},
 		{k.LaunchAI, k.Help, k.Quit},
 	}
 }

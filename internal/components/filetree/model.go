@@ -9,6 +9,7 @@ import (
 	"github.com/avitaltamir/vibecommander/internal/git"
 	"github.com/avitaltamir/vibecommander/internal/theme"
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -31,16 +32,17 @@ type (
 
 // KeyMap defines the key bindings for the file tree.
 type KeyMap struct {
-	Up       key.Binding
-	Down     key.Binding
-	Left     key.Binding
-	Right    key.Binding
-	Enter    key.Binding
-	PageUp   key.Binding
-	PageDown key.Binding
-	Home     key.Binding
-	End      key.Binding
-	Toggle   key.Binding
+	Up            key.Binding
+	Down          key.Binding
+	Left          key.Binding
+	Right         key.Binding
+	Enter         key.Binding
+	PageUp        key.Binding
+	PageDown      key.Binding
+	Home          key.Binding
+	End           key.Binding
+	Toggle        key.Binding
+	CompactIndent key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings.
@@ -76,6 +78,9 @@ func DefaultKeyMap() KeyMap {
 		Toggle: key.NewBinding(
 			key.WithKeys("space"),
 		),
+		CompactIndent: key.NewBinding(
+			key.WithKeys("alt+i", "ˆ"), // ˆ = Option+i on Mac
+		),
 	}
 }
 
@@ -100,6 +105,15 @@ type Model struct {
 	// Cached view for dirty checking
 	cachedView string
 
+	// Search/filter functionality
+	searching   bool            // Whether search mode is active
+	searchInput textinput.Model // Text input for search query
+	searchQuery string          // Current search filter (persists after exiting search mode)
+	matchCount  int             // Number of matching files
+
+	// Display options
+	compactIndent bool // Use 2-space indentation instead of 4-space
+
 	keys  KeyMap
 	theme *theme.Theme
 }
@@ -108,6 +122,11 @@ type Model struct {
 func New() Model {
 	cwd, _ := os.Getwd()
 
+	// Initialize search input
+	ti := textinput.New()
+	ti.Placeholder = "Search files..."
+	ti.CharLimit = 100
+
 	m := Model{
 		loading:           make(map[string]bool),
 		dirGitStatusCache: make(map[string]string),
@@ -115,6 +134,7 @@ func New() Model {
 		theme:             theme.DefaultTheme(),
 		workDir:           cwd,
 		showHidden:        true,
+		searchInput:       ti,
 	}
 
 	// Initialize root to current working directory
@@ -161,6 +181,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if !m.Focused() {
 			return m, nil
 		}
+		// When searching, route most keys to the search input
+		if m.searching {
+			return m.handleSearchKey(msg)
+		}
 		return m.handleKey(msg)
 
 	case tea.MouseWheelMsg:
@@ -177,6 +201,21 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	// Check for search activation
+	if msg.String() == "/" {
+		m.searching = true
+		m.searchInput.SetValue("")
+		m.searchInput.Focus()
+		return m, textinput.Blink
+	}
+
+	// Check for Escape to clear search filter (when not in search mode)
+	if msg.String() == "esc" && m.searchQuery != "" {
+		m.searchQuery = ""
+		m.rebuildVisible()
+		return m, nil
+	}
+
 	switch {
 	case key.Matches(msg, m.keys.Up):
 		m.moveCursor(-1)
@@ -210,9 +249,49 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Toggle):
 		return m.handleToggle()
+
+	case key.Matches(msg, m.keys.CompactIndent):
+		m.compactIndent = !m.compactIndent
+		m.MarkDirty()
+		return m, nil
 	}
 
 	return m, nil
+}
+
+func (m Model) handleSearchKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		// Confirm search and exit search mode
+		m.searching = false
+		m.searchQuery = m.searchInput.Value()
+		m.searchInput.Blur()
+		m.rebuildVisible()
+		// Jump to first match if there is one
+		if len(m.visible) > 0 {
+			m.cursor = 0
+			m.offset = 0
+		}
+		return m, nil
+
+	case "esc":
+		// Cancel search, clear filter, exit search mode
+		m.searching = false
+		m.searchQuery = ""
+		m.searchInput.Blur()
+		m.rebuildVisible()
+		return m, nil
+	}
+
+	// Update the search input
+	var cmd tea.Cmd
+	m.searchInput, cmd = m.searchInput.Update(msg)
+
+	// Apply filter as user types
+	m.searchQuery = m.searchInput.Value()
+	m.rebuildVisible()
+
+	return m, cmd
 }
 
 func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) (Model, tea.Cmd) {
@@ -383,7 +462,16 @@ func (m *Model) rebuildVisible() {
 		m.visible = nil
 		return
 	}
-	m.visible = m.root.Flatten(m.showHidden)
+
+	allNodes := m.root.Flatten(m.showHidden)
+
+	// Apply search filter if active
+	if m.searchQuery != "" {
+		m.visible, m.matchCount = m.filterNodes(allNodes, m.searchQuery)
+	} else {
+		m.visible = allNodes
+		m.matchCount = 0
+	}
 
 	// Keep cursor in bounds
 	if m.cursor >= len(m.visible) {
@@ -395,6 +483,49 @@ func (m *Model) rebuildVisible() {
 
 	// Mark dirty since visible nodes changed
 	m.MarkDirty()
+}
+
+// filterNodes filters nodes based on search query.
+// Returns matching nodes (files that match + their parent directories) and match count.
+func (m *Model) filterNodes(nodes []*Node, query string) ([]*Node, int) {
+	if query == "" {
+		return nodes, 0
+	}
+
+	query = strings.ToLower(query)
+	matchingPaths := make(map[string]bool)
+	matchCount := 0
+
+	// First pass: find all matching files and their ancestor paths
+	for _, node := range nodes {
+		if !node.IsDir && strings.Contains(strings.ToLower(node.Name), query) {
+			matchCount++
+			// Mark this node and all its ancestors as matching
+			matchingPaths[node.Path] = true
+			parent := node.Parent
+			for parent != nil {
+				matchingPaths[parent.Path] = true
+				// Auto-expand parent directories to show matches
+				parent.Expanded = true
+				parent = parent.Parent
+			}
+		}
+	}
+
+	// If no matches, show all nodes (don't filter)
+	if matchCount == 0 {
+		return nodes, 0
+	}
+
+	// Second pass: collect all matching nodes
+	var result []*Node
+	for _, node := range nodes {
+		if matchingPaths[node.Path] {
+			result = append(result, node)
+		}
+	}
+
+	return result, matchCount
 }
 
 func (m Model) loadChildren(path string) tea.Cmd {
@@ -437,7 +568,13 @@ func (m Model) View() string {
 		return ""
 	}
 
-	contentHeight := h - 2 // Account for borders
+	// Reserve space for search bar if searching or filtered
+	searchBarHeight := 0
+	if m.searching || m.searchQuery != "" {
+		searchBarHeight = 1
+	}
+
+	contentHeight := h - 2 - searchBarHeight // Account for borders and search bar
 
 	var lines []string
 	for i := m.offset; i < len(m.visible) && len(lines) < contentHeight; i++ {
@@ -453,7 +590,46 @@ func (m Model) View() string {
 
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
 
+	// Add search bar at the bottom if searching or filtered
+	if m.searching || m.searchQuery != "" {
+		searchBar := m.renderSearchBar(w - 4)
+		content = lipgloss.JoinVertical(lipgloss.Left, content, searchBar)
+	}
+
 	return content
+}
+
+// renderSearchBar renders the search input bar.
+func (m Model) renderSearchBar(maxWidth int) string {
+	var bar string
+
+	if m.searching {
+		// Active search mode - show input
+		bar = "/" + m.searchInput.View()
+	} else if m.searchQuery != "" {
+		// Filter active - show filter info
+		filterStyle := lipgloss.NewStyle().Foreground(theme.CyberCyan)
+		bar = filterStyle.Render("/ " + m.searchQuery)
+		if m.matchCount > 0 {
+			countStyle := lipgloss.NewStyle().Foreground(theme.MutedLavender)
+			bar += countStyle.Render(" (" + itoa(m.matchCount) + " matches)")
+		}
+	}
+
+	return bar
+}
+
+// itoa converts an int to string without importing strconv.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var result []byte
+	for n > 0 {
+		result = append([]byte{byte('0' + n%10)}, result...)
+		n /= 10
+	}
+	return string(result)
 }
 
 // ViewCached returns the cached view if not dirty, otherwise renders fresh.
@@ -467,10 +643,14 @@ func (m *Model) ViewCached() string {
 }
 
 func (m Model) renderNode(node *Node, selected bool, maxWidth int) string {
-	// Build indentation
+	// Build indentation (use compact 2-space or normal 4-space)
 	indent := ""
+	indentStr := theme.TreeSpace // 4 spaces
+	if m.compactIndent {
+		indentStr = "  " // 2 spaces
+	}
 	for i := 0; i < node.Depth; i++ {
-		indent += theme.TreeSpace
+		indent += indentStr
 	}
 
 	// Get icon

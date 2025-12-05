@@ -61,7 +61,7 @@ func TestCalculate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l := Calculate(tt.width, tt.height, tt.miniVisible)
+			l := Calculate(tt.width, tt.height, tt.miniVisible, DefaultLeftPanelPercent)
 
 			assert.Equal(t, tt.width, l.TotalWidth, "TotalWidth")
 			assert.Equal(t, tt.height, l.TotalHeight, "TotalHeight")
@@ -77,7 +77,7 @@ func TestCalculate(t *testing.T) {
 }
 
 func TestLayoutBounds(t *testing.T) {
-	l := Calculate(100, 40, true)
+	l := Calculate(100, 40, true, DefaultLeftPanelPercent)
 
 	t.Run("LeftPanelBounds", func(t *testing.T) {
 		x, y, width, height := l.LeftPanelBounds()
@@ -104,7 +104,7 @@ func TestLayoutBounds(t *testing.T) {
 	})
 
 	t.Run("MiniBufferBounds when hidden", func(t *testing.T) {
-		l2 := Calculate(100, 40, false)
+		l2 := Calculate(100, 40, false, DefaultLeftPanelPercent)
 		x, y, width, height := l2.MiniBufferBounds()
 		assert.Equal(t, 0, x)
 		assert.Equal(t, 0, y)
@@ -114,7 +114,7 @@ func TestLayoutBounds(t *testing.T) {
 }
 
 func TestContentDimensions(t *testing.T) {
-	l := Calculate(100, 40, false)
+	l := Calculate(100, 40, false, DefaultLeftPanelPercent)
 
 	t.Run("ContentWidth", func(t *testing.T) {
 		width := l.ContentWidth(50, 1)

@@ -2,12 +2,13 @@ package layout
 
 // Layout constants
 const (
-	LeftPanelPercent  = 25
-	RightPanelPercent = 75
-	MiniBufferPercent = 25
-	StatusBarHeight   = 1
-	MinPanelWidth     = 20
-	MinPanelHeight    = 5
+	DefaultLeftPanelPercent = 25
+	MinLeftPanelPercent     = 15
+	MaxLeftPanelPercent     = 60
+	MiniBufferPercent       = 25
+	StatusBarHeight         = 1
+	MinPanelWidth           = 20
+	MinPanelHeight          = 5
 )
 
 // Layout holds calculated dimensions for all panels.
@@ -32,7 +33,8 @@ type Layout struct {
 }
 
 // Calculate computes the layout dimensions based on terminal size.
-func Calculate(width, height int, miniVisible bool) Layout {
+// leftPercent controls the width of the left panel (file tree).
+func Calculate(width, height int, miniVisible bool, leftPercent int) Layout {
 	l := Layout{
 		TotalWidth:   width,
 		TotalHeight:  height,
@@ -40,8 +42,16 @@ func Calculate(width, height int, miniVisible bool) Layout {
 		MiniVisible:  miniVisible,
 	}
 
-	// Calculate horizontal split (25/75)
-	l.LeftWidth = max(width*LeftPanelPercent/100, MinPanelWidth)
+	// Clamp left panel percentage to valid range
+	if leftPercent < MinLeftPanelPercent {
+		leftPercent = MinLeftPanelPercent
+	}
+	if leftPercent > MaxLeftPanelPercent {
+		leftPercent = MaxLeftPanelPercent
+	}
+
+	// Calculate horizontal split
+	l.LeftWidth = max(width*leftPercent/100, MinPanelWidth)
 	l.RightWidth = max(width-l.LeftWidth, MinPanelWidth)
 
 	// Ensure we don't exceed total width

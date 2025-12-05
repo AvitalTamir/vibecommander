@@ -55,9 +55,11 @@ type Model struct {
 	lastQuitPress time.Time // For double-tap ctrl+q detection
 
 	// Layout
-	layout layout.Layout
-	theme  *theme.Theme
-	keys   KeyMap
+	layout           layout.Layout
+	leftPanelPercent int  // Dynamic width percentage for file tree (15-60)
+	resizingPanel    bool // Whether user is dragging to resize panels
+	theme            *theme.Theme
+	keys             KeyMap
 
 	// Git
 	gitProvider    *git.ShellProvider
@@ -111,6 +113,7 @@ func New() Model {
 		miniBuffer:         minibuffer.New(),
 		focus:              PanelFileTree,
 		miniVisible:        false,
+		leftPanelPercent:   layout.DefaultLeftPanelPercent,
 		theme:              theme.DefaultTheme(),
 		keys:               DefaultKeyMap(),
 		gitProvider:        gitProvider,
@@ -275,7 +278,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.layout = layout.Calculate(msg.Width, msg.Height, m.miniVisible)
+		m.layout = layout.Calculate(msg.Width, msg.Height, m.miniVisible, m.leftPanelPercent)
 		wasReady := m.ready
 		m.ready = true
 		// Update child component sizes
@@ -414,7 +417,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Close mini buffer if open
 			if m.miniVisible {
 				m.miniVisible = false
-				m.layout = layout.Calculate(m.width, m.height, m.miniVisible)
+				m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent)
 				m = m.updateSizes()
 			}
 			m = m.setFocus(PanelFileTree)
@@ -430,7 +433,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Close mini buffer if open
 			if m.miniVisible {
 				m.miniVisible = false
-				m.layout = layout.Calculate(m.width, m.height, m.miniVisible)
+				m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent)
 				m = m.updateSizes()
 			}
 			// Enter fullscreen if already focused
@@ -449,7 +452,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Always toggle terminal on/off
 			m.miniVisible = !m.miniVisible
-			m.layout = layout.Calculate(m.width, m.height, m.miniVisible)
+			m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent)
 			m = m.updateSizes()
 			if m.miniVisible {
 				m = m.setFocus(PanelMiniBuffer)
@@ -481,6 +484,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Cycle to next theme
 			theme.NextTheme()
 			return m, nil
+
+		case key.Matches(msg, m.keys.ShrinkTree):
+			// Shrink file tree by 5%
+			m.leftPanelPercent -= 5
+			if m.leftPanelPercent < layout.MinLeftPanelPercent {
+				m.leftPanelPercent = layout.MinLeftPanelPercent
+			}
+			m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent)
+			m = m.updateSizes()
+			return m, nil
+
+		case key.Matches(msg, m.keys.WidenTree):
+			// Widen file tree by 5%
+			m.leftPanelPercent += 5
+			if m.leftPanelPercent > layout.MaxLeftPanelPercent {
+				m.leftPanelPercent = layout.MaxLeftPanelPercent
+			}
+			m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent)
+			m = m.updateSizes()
+			return m, nil
 		}
 
 		// Any other key closes help
@@ -495,7 +518,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ToggleMiniBufferMsg:
 		m.miniVisible = !m.miniVisible
-		m.layout = layout.Calculate(m.width, m.height, m.miniVisible)
+		m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent)
 		m = m.updateSizes()
 		return m, nil
 
@@ -571,6 +594,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle mouse clicks to focus panes and interact with content
 		mouse := msg.Mouse()
 		if mouse.Button == tea.MouseLeft {
+			// Check if clicking on the border between file tree and content for resize
+			borderX := m.layout.LeftWidth
+			if mouse.X >= borderX-1 && mouse.X <= borderX+1 && m.fullscreen == PanelNone {
+				m.resizingPanel = true
+				return m, nil
+			}
+
 			targetPanel := m.panelAtPosition(mouse.X, mouse.Y)
 
 			// Check for header click on content panel to switch sources
@@ -601,8 +631,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
-	case tea.MouseWheelMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg:
-		// Route other mouse events to the appropriate panel for scrolling/interaction
+	case tea.MouseMotionMsg:
+		// Handle panel resize dragging
+		if m.resizingPanel {
+			mouse := msg.Mouse()
+			// Calculate new percentage based on mouse X position
+			if m.width > 0 {
+				newPercent := mouse.X * 100 / m.width
+				if newPercent < layout.MinLeftPanelPercent {
+					newPercent = layout.MinLeftPanelPercent
+				}
+				if newPercent > layout.MaxLeftPanelPercent {
+					newPercent = layout.MaxLeftPanelPercent
+				}
+				m.leftPanelPercent = newPercent
+				m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent)
+				m = m.updateSizes()
+			}
+			return m, nil
+		}
+		// Route to appropriate panel
+		cmd := m.routeMouseToPanel(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
+
+	case tea.MouseReleaseMsg:
+		// Stop panel resize dragging
+		if m.resizingPanel {
+			m.resizingPanel = false
+			return m, nil
+		}
+		// Route to appropriate panel
+		cmd := m.routeMouseToPanel(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
+
+	case tea.MouseWheelMsg:
+		// Route wheel events to the appropriate panel for scrolling
 		cmd := m.routeMouseToPanel(msg)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
@@ -1057,6 +1126,13 @@ func (m Model) renderHelpOverlay(_ string) string {
 		"║    Alt+1         Focus file tree                         ║",
 		"║    Alt+2         Focus content (2x = fullscreen)         ║",
 		"║    Alt+3         Toggle terminal                         ║",
+		"║    Alt+[         Shrink file tree                        ║",
+		"║    Alt+]         Widen file tree                         ║",
+		"║                                                          ║",
+		"║  FILE TREE                                               ║",
+		"║    /             Search/filter files                     ║",
+		"║    Esc           Clear filter                            ║",
+		"║    Alt+I         Toggle compact indentation              ║",
 		"║                                                          ║",
 		"║  VIEWER (when viewing a file)                            ║",
 		"║    /             Search (regex)                          ║",
