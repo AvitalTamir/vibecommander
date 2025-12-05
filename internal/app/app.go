@@ -561,12 +561,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseClickMsg:
 		// Handle mouse clicks to focus panes and interact with content
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-			targetPanel := m.panelAtPosition(msg.X, msg.Y)
+		mouse := msg.Mouse()
+		if mouse.Button == tea.MouseLeft {
+			targetPanel := m.panelAtPosition(mouse.X, mouse.Y)
 
 			// Check for header click on content panel to switch sources
 			if targetPanel == PanelContent && m.content.HasMultipleSources() {
-				if source := m.detectHeaderClick(msg.X, msg.Y); source != content.SourceNone {
+				if source := m.detectHeaderClick(mouse.X, mouse.Y); source != content.SourceNone {
 					// Switch to the clicked source
 					var cmd tea.Cmd
 					m.content, cmd = m.content.Update(content.SwitchSourceMsg{Source: source})
@@ -584,10 +585,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if targetPanel != PanelNone && targetPanel != m.focus {
 				m = m.setFocus(targetPanel)
 			}
-		mouse := msg.Mouse()
-		targetPanel := m.panelAtPosition(mouse.X, mouse.Y)
-		if targetPanel != PanelNone && targetPanel != m.focus {
-			m = m.setFocus(targetPanel)
 		}
 		// Route click to the appropriate panel
 		cmd := m.routeMouseClickToPanel(msg)
@@ -1189,6 +1186,8 @@ func (m Model) detectHeaderClick(x, y int) content.ContentSource {
 	}
 
 	return content.SourceNone
+}
+
 // routeMouseClickToPanel routes mouse click events to the panel at the mouse position.
 func (m *Model) routeMouseClickToPanel(msg tea.MouseClickMsg) tea.Cmd {
 	var cmd tea.Cmd

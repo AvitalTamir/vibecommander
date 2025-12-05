@@ -427,7 +427,7 @@ func buildTopBorder(border lipgloss.Border, borderStyle, titleStyle, scrollStyle
 			secondaryTitleStyle = inactiveTitleStyle
 		}
 
-		secondaryStatusStyle := statusStyle
+		secondaryStatusStyle := lipgloss.NewStyle().Foreground(MatrixGreen)
 		if !opts.SecondaryStatusRunning {
 			secondaryStatusStyle = lipgloss.NewStyle().Foreground(DimPurple)
 		}
