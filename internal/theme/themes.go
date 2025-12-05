@@ -1,6 +1,8 @@
 package theme
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"charm.land/lipgloss/v2"
+)
 
 // Available themes
 var (

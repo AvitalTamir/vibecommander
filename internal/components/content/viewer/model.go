@@ -14,10 +14,10 @@ import (
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/selection"
 	"github.com/avitaltamir/vibecommander/internal/theme"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Messages
@@ -59,7 +59,7 @@ func New() Model {
 	ti := textinput.New()
 	ti.Placeholder = "regex pattern..."
 	ti.CharLimit = 256
-	ti.Width = 30
+	ti.SetWidth(30)
 
 	return Model{
 		theme:        theme.DefaultTheme(),
@@ -84,38 +84,39 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// This is handled by SetSize from parent
 		return m, nil
 
-	case tea.MouseMsg:
-		// Handle text selection
-		switch msg.Button {
-		case tea.MouseButtonLeft:
-			switch msg.Action {
-			case tea.MouseActionPress:
-				// Start selection - convert screen coordinates to text position
-				line, col := m.screenToTextPosition(msg.X, msg.Y)
-				m.selection.StartSelection(line, col)
-				m.updateSelectionContent()
-				m.viewport.SetContent(m.renderContent())
-				return m, nil
-			case tea.MouseActionMotion:
-				// Update selection during drag
-				if m.selection.Selection.Active {
-					line, col := m.screenToTextPosition(msg.X, msg.Y)
-					m.selection.UpdateSelection(line, col)
-					m.viewport.SetContent(m.renderContent())
-					return m, nil
-				}
-			case tea.MouseActionRelease:
-				// End selection
-				if m.selection.Selection.Active {
-					line, col := m.screenToTextPosition(msg.X, msg.Y)
-					m.selection.UpdateSelection(line, col)
-					m.selection.EndSelection()
-					m.viewport.SetContent(m.renderContent())
-					return m, nil
-				}
-			}
+	case tea.MouseClickMsg:
+		// Handle text selection start - MouseClickMsg is only for left button
+		mouse := msg.Mouse()
+		// Start selection - convert screen coordinates to text position
+		line, col := m.screenToTextPosition(mouse.X, mouse.Y)
+		m.selection.StartSelection(line, col)
+		m.updateSelectionContent()
+		m.viewport.SetContent(m.renderContent())
+		return m, nil
+
+	case tea.MouseMotionMsg:
+		// Update selection during drag
+		mouse := msg.Mouse()
+		if m.selection.Selection.Active {
+			line, col := m.screenToTextPosition(mouse.X, mouse.Y)
+			m.selection.UpdateSelection(line, col)
+			m.viewport.SetContent(m.renderContent())
+			return m, nil
 		}
-		// Handle mouse wheel for scrolling
+
+	case tea.MouseReleaseMsg:
+		// End selection
+		mouse := msg.Mouse()
+		if m.selection.Selection.Active {
+			line, col := m.screenToTextPosition(mouse.X, mouse.Y)
+			m.selection.UpdateSelection(line, col)
+			m.selection.EndSelection()
+			m.viewport.SetContent(m.renderContent())
+			return m, nil
+		}
+
+	case tea.MouseWheelMsg:
+		// Always handle mouse wheel for scrolling, even when not focused
 		m.viewport, cmd = m.viewport.Update(msg)
 		cmds = append(cmds, cmd)
 		return m, tea.Batch(cmds...)
@@ -136,10 +137,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if !m.Focused() {
 			return m, nil
 		}
+
+		key := msg.Key()
 
 		// Handle copy (Ctrl+C) when text is selected
 		if selection.IsCopyKey(msg.String()) && m.selection.HasSelection() {
@@ -150,7 +153,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 		// Clear selection on Escape
-		if msg.Type == tea.KeyEscape && m.selection.HasSelection() {
+		if key.Code == tea.KeyEscape && m.selection.HasSelection() {
 			m.selection.ClearSelection()
 			m.viewport.SetContent(m.renderContent())
 			return m, nil
@@ -158,7 +161,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		// Handle search mode
 		if m.searching {
-			switch msg.Type {
+			switch key.Code {
 			case tea.KeyEscape:
 				// Just close input, keep existing search highlights
 				m.searching = false
@@ -189,21 +192,21 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 		// Normal mode - check for Esc to clear search
-		if msg.Type == tea.KeyEscape && len(m.matchLines) > 0 {
+		if key.Code == tea.KeyEscape && len(m.matchLines) > 0 {
 			m.clearSearch()
 			m.viewport.SetContent(m.renderContent())
 			return m, nil
 		}
 
 		// Normal mode - check for search trigger
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == '/' {
+		if key.Text == "/" {
 			m.searching = true
 			m.searchInput.Focus()
 			return m, textinput.Blink
 		}
 
 		// Check for 'n' to go to next match (when not searching)
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'n' && len(m.matchLines) > 0 {
+		if key.Text == "n" && len(m.matchLines) > 0 {
 			m.currentMatch = (m.currentMatch + 1) % len(m.matchLines)
 			m.scrollToCurrentMatch()
 			m.viewport.SetContent(m.renderContent())
@@ -211,7 +214,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 		// Check for 'p' to go to previous match
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'p' && len(m.matchLines) > 0 {
+		if key.Text == "p" && len(m.matchLines) > 0 {
 			m.currentMatch--
 			if m.currentMatch < 0 {
 				m.currentMatch = len(m.matchLines) - 1
@@ -248,10 +251,10 @@ func (m Model) View() string {
 		viewportHeight := h - 1 // Reserve 1 line for search bar
 
 		// Temporarily resize viewport for display
-		oldHeight := m.viewport.Height
-		m.viewport.Height = viewportHeight
+		oldHeight := m.viewport.Height()
+		m.viewport.SetHeight(viewportHeight)
 		content := m.viewport.View()
-		m.viewport.Height = oldHeight
+		m.viewport.SetHeight(oldHeight)
 
 		// Render search bar
 		searchBar := m.renderSearchBar(w)
@@ -563,13 +566,13 @@ func (m Model) SetSize(width, height int) Model {
 
 	// Initialize or resize viewport
 	if !m.ready {
-		m.viewport = viewport.New(width, height)
+		m.viewport = viewport.New(viewport.WithWidth(width), viewport.WithHeight(height))
 		m.viewport.MouseWheelEnabled = true
 		m.viewport.MouseWheelDelta = 3
 		m.ready = true
 	} else {
-		m.viewport.Width = width
-		m.viewport.Height = height
+		m.viewport.SetWidth(width)
+		m.viewport.SetHeight(height)
 	}
 
 	// Re-render content to fit new width
@@ -672,7 +675,7 @@ func (m *Model) scrollToCurrentMatch() {
 
 	line := m.matchLines[m.currentMatch]
 	// Scroll so the match is roughly centered
-	targetLine := line - m.viewport.Height/2
+	targetLine := line - m.viewport.Height()/2
 	if targetLine < 0 {
 		targetLine = 0
 	}
@@ -741,7 +744,7 @@ const lineNumberWidth = 7 // 4 digits + " │ "
 // Takes into account the viewport scroll offset and line number prefix.
 func (m Model) screenToTextPosition(x, y int) (line, col int) {
 	// Y coordinate: add viewport scroll offset
-	line = y + m.viewport.YOffset
+	line = y + m.viewport.YOffset()
 
 	// X coordinate: subtract line number prefix width
 	col = x - lineNumberWidth

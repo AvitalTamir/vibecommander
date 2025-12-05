@@ -1,6 +1,6 @@
 package components
 
-import tea "github.com/charmbracelet/bubbletea"
+import tea "charm.land/bubbletea/v2"
 
 // Component defines the interface all Vibe Commander components must implement.
 // It extends tea.Model with focus management and sizing capabilities.
@@ -26,6 +26,7 @@ type Base struct {
 	focused bool
 	width   int
 	height  int
+	dirty   bool // Whether the component needs to re-render
 }
 
 // NewBase creates a new Base with the given dimensions.
@@ -60,4 +61,19 @@ func (b *Base) SetSize(width, height int) {
 // Size returns the component's current dimensions.
 func (b Base) Size() (width, height int) {
 	return b.width, b.height
+}
+
+// MarkDirty marks the component as needing a re-render.
+func (b *Base) MarkDirty() {
+	b.dirty = true
+}
+
+// ClearDirty clears the dirty flag.
+func (b *Base) ClearDirty() {
+	b.dirty = false
+}
+
+// IsDirty returns whether the component needs to re-render.
+func (b Base) IsDirty() bool {
+	return b.dirty
 }
