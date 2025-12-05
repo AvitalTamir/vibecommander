@@ -208,3 +208,170 @@ func TestIntegration(t *testing.T) {
 		assert.Equal(t, testContent, m.viewer.Content())
 	})
 }
+
+func TestSourcesInfo(t *testing.T) {
+	t.Run("returns empty when no content loaded", func(t *testing.T) {
+		m := New()
+		m = m.SetSize(80, 24)
+
+		sources := m.SourcesInfo()
+		assert.Empty(t, sources)
+	})
+
+	t.Run("returns file source after opening file", func(t *testing.T) {
+		m := New()
+		m = m.SetSize(80, 24)
+
+		// Open a file
+		m, _ = m.Update(OpenFileMsg{Path: "/test/file.txt"})
+
+		sources := m.SourcesInfo()
+		require.Len(t, sources, 1)
+		assert.Equal(t, SourceFile, sources[0].Source)
+		assert.Equal(t, "file.txt", sources[0].Title)
+		assert.True(t, sources[0].IsActive)
+	})
+
+	t.Run("returns AI source after launching AI", func(t *testing.T) {
+		m := New()
+		m = m.SetSize(80, 24)
+
+		// Launch AI
+		m, _ = m.Update(LaunchAIMsg{Command: "claude", Args: []string{}})
+
+		sources := m.SourcesInfo()
+		require.Len(t, sources, 1)
+		assert.Equal(t, SourceAI, sources[0].Source)
+		assert.Equal(t, "Claude", sources[0].Title)
+		assert.True(t, sources[0].IsActive)
+	})
+
+	t.Run("returns both sources when file and AI loaded", func(t *testing.T) {
+		m := New()
+		m = m.SetSize(80, 24)
+
+		// Open a file first
+		m, _ = m.Update(OpenFileMsg{Path: "/test/file.txt"})
+		// Then launch AI
+		m, _ = m.Update(LaunchAIMsg{Command: "claude", Args: []string{}})
+
+		sources := m.SourcesInfo()
+		require.Len(t, sources, 2)
+
+		// File should be inactive (AI is active)
+		assert.Equal(t, SourceFile, sources[0].Source)
+		assert.False(t, sources[0].IsActive)
+
+		// AI should be active
+		assert.Equal(t, SourceAI, sources[1].Source)
+		assert.True(t, sources[1].IsActive)
+	})
+}
+
+func TestSwitchSourceMsg(t *testing.T) {
+	t.Run("switches from AI to file", func(t *testing.T) {
+		m := New()
+		m = m.SetSize(80, 24)
+
+		// Open file and launch AI
+		m, _ = m.Update(OpenFileMsg{Path: "/test/file.txt"})
+		m, _ = m.Update(LaunchAIMsg{Command: "claude", Args: []string{}})
+
+		// Currently in AI mode
+		assert.Equal(t, ModeAI, m.mode)
+
+		// Switch to file
+		m, _ = m.Update(SwitchSourceMsg{Source: SourceFile})
+
+		assert.Equal(t, ModeViewer, m.mode)
+	})
+
+	t.Run("switches from file to AI", func(t *testing.T) {
+		m := New()
+		m = m.SetSize(80, 24)
+
+		// Launch AI first, then open file
+		m, _ = m.Update(LaunchAIMsg{Command: "claude", Args: []string{}})
+		m, _ = m.Update(OpenFileMsg{Path: "/test/file.txt"})
+
+		// Open file switches to viewer mode
+		assert.Equal(t, ModeViewer, m.mode)
+
+		// Switch back to AI
+		m, _ = m.Update(SwitchSourceMsg{Source: SourceAI})
+
+		assert.Equal(t, ModeAI, m.mode)
+	})
+
+	t.Run("ignores switch to non-existent source", func(t *testing.T) {
+		m := New()
+		m = m.SetSize(80, 24)
+
+		// Only open file
+		m, _ = m.Update(OpenFileMsg{Path: "/test/file.txt"})
+
+		// Try to switch to AI (which doesn't exist)
+		m, _ = m.Update(SwitchSourceMsg{Source: SourceAI})
+
+		// Should stay in viewer mode
+		assert.Equal(t, ModeViewer, m.mode)
+	})
+}
+
+func TestHasMultipleSources(t *testing.T) {
+	t.Run("returns false with no content", func(t *testing.T) {
+		m := New()
+		assert.False(t, m.HasMultipleSources())
+	})
+
+	t.Run("returns false with only file", func(t *testing.T) {
+		m := New()
+		m = m.SetSize(80, 24)
+		m, _ = m.Update(OpenFileMsg{Path: "/test/file.txt"})
+		assert.False(t, m.HasMultipleSources())
+	})
+
+	t.Run("returns false with only AI", func(t *testing.T) {
+		m := New()
+		m = m.SetSize(80, 24)
+		m, _ = m.Update(LaunchAIMsg{Command: "claude", Args: []string{}})
+		assert.False(t, m.HasMultipleSources())
+	})
+
+	t.Run("returns true with both file and AI", func(t *testing.T) {
+		m := New()
+		m = m.SetSize(80, 24)
+		m, _ = m.Update(OpenFileMsg{Path: "/test/file.txt"})
+		m, _ = m.Update(LaunchAIMsg{Command: "claude", Args: []string{}})
+		assert.True(t, m.HasMultipleSources())
+	})
+}
+
+func TestActiveSource(t *testing.T) {
+	t.Run("returns SourceNone initially", func(t *testing.T) {
+		m := New()
+		// ModeViewer is default, but no file content
+		assert.Equal(t, SourceFile, m.ActiveSource())
+	})
+
+	t.Run("returns SourceFile in viewer mode", func(t *testing.T) {
+		m := New()
+		m = m.SetSize(80, 24)
+		m, _ = m.Update(OpenFileMsg{Path: "/test/file.txt"})
+		assert.Equal(t, SourceFile, m.ActiveSource())
+	})
+
+	t.Run("returns SourceFile in diff mode", func(t *testing.T) {
+		m := New()
+		m = m.SetSize(80, 24)
+		m.mode = ModeDiff
+		assert.Equal(t, SourceFile, m.ActiveSource())
+	})
+
+	t.Run("returns SourceAI in AI mode", func(t *testing.T) {
+		m := New()
+		m = m.SetSize(80, 24)
+		m, _ = m.Update(LaunchAIMsg{Command: "claude", Args: []string{}})
+		assert.Equal(t, SourceAI, m.ActiveSource())
+	})
+}

@@ -304,6 +304,23 @@ type PanelTitleOptions struct {
 	ShowStatus    bool    // Whether to show status at all
 	ScrollPercent float64 // Scroll position (0-100), negative to hide
 	BottomHints   string  // Key hints for bottom border (e.g., "↑↓:scroll  q:quit")
+
+	// Dual-title support for content panel
+	// When SecondaryTitle is set, both titles are shown side-by-side
+	SecondaryTitle         string  // Second title (e.g., AI command name when viewing file)
+	SecondaryStatusRunning bool    // Running indicator for secondary title
+	SecondaryShowStatus    bool    // Whether to show status for secondary title
+	SecondaryActive        bool    // Whether secondary title is the active view
+	PrimaryActive          bool    // Whether primary title is the active view
+}
+
+// TitleSegmentInfo holds pre-calculated information about a title segment
+// for click region detection. Prepared for future split-panel support.
+type TitleSegmentInfo struct {
+	Title    string // The title text
+	StartX   int    // X position where this segment starts (relative to panel)
+	EndX     int    // X position where this segment ends
+	IsActive bool   // Whether this is the currently active source
 }
 
 // RenderPanelWithTitle renders content in a panel with title embedded in the border.
@@ -340,7 +357,7 @@ func RenderPanelWithTitle(content string, opts PanelTitleOptions, width, height 
 	innerWidth := width - 2
 
 	// Build top border with title
-	topBorder := buildTopBorder(border, borderStyle, titleStyle, scrollStyle, statusStyle, opts, innerWidth)
+	topBorder := buildTopBorder(border, borderStyle, titleStyle, scrollStyle, statusStyle, opts, innerWidth, focused)
 
 	// Build bottom border with hints
 	bottomBorder := buildBottomBorder(border, borderStyle, hintStyle, opts.BottomHints, innerWidth)
@@ -385,18 +402,42 @@ func RenderPanelWithTitle(content string, opts PanelTitleOptions, width, height 
 }
 
 // buildTopBorder creates the top border with title and optional scroll/status indicators.
-func buildTopBorder(border lipgloss.Border, borderStyle, titleStyle, scrollStyle, statusStyle lipgloss.Style, opts PanelTitleOptions, innerWidth int) string {
-	// Format the title segment: "[ Title ● ]" or "[ Title ]"
-	titleText := opts.Title
-	if opts.ShowStatus {
-		status := FormatStatusIndicator(opts.StatusRunning)
-		titleText = titleText + " " + statusStyle.Render(status)
+func buildTopBorder(border lipgloss.Border, borderStyle, titleStyle, scrollStyle, statusStyle lipgloss.Style, opts PanelTitleOptions, innerWidth int, focused bool) string {
+	// Styles for active vs inactive titles
+	activeTitleStyle := titleStyle
+	inactiveTitleStyle := lipgloss.NewStyle().Foreground(MutedLavender)
+
+	// Format the primary title segment
+	primaryTitleStyle := activeTitleStyle
+	if opts.SecondaryTitle != "" && !opts.PrimaryActive {
+		primaryTitleStyle = inactiveTitleStyle
 	}
-	titleSegment := "[ " + titleStyle.Render(opts.Title)
+
+	titleSegment := "[ " + primaryTitleStyle.Render(opts.Title)
 	if opts.ShowStatus {
 		titleSegment += " " + statusStyle.Render(FormatStatusIndicator(opts.StatusRunning))
 	}
 	titleSegment += " ]"
+
+	// Format secondary title segment if present
+	var secondarySegment string
+	if opts.SecondaryTitle != "" {
+		secondaryTitleStyle := activeTitleStyle
+		if !opts.SecondaryActive {
+			secondaryTitleStyle = inactiveTitleStyle
+		}
+
+		secondaryStatusStyle := lipgloss.NewStyle().Foreground(MatrixGreen)
+		if !opts.SecondaryStatusRunning {
+			secondaryStatusStyle = lipgloss.NewStyle().Foreground(DimPurple)
+		}
+
+		secondarySegment = "[ " + secondaryTitleStyle.Render(opts.SecondaryTitle)
+		if opts.SecondaryShowStatus {
+			secondarySegment += " " + secondaryStatusStyle.Render(FormatStatusIndicator(opts.SecondaryStatusRunning))
+		}
+		secondarySegment += " ]"
+	}
 
 	// Format scroll indicator if applicable
 	var scrollSegment string
@@ -409,6 +450,10 @@ func buildTopBorder(border lipgloss.Border, borderStyle, titleStyle, scrollStyle
 
 	// Calculate visible widths (without ANSI codes)
 	titleWidth := utf8.RuneCountInString(stripAnsi(titleSegment))
+	secondaryWidth := 0
+	if secondarySegment != "" {
+		secondaryWidth = utf8.RuneCountInString(stripAnsi(secondarySegment)) + 2 // +2 for separator spaces
+	}
 	scrollWidth := 0
 	if scrollSegment != "" {
 		scrollWidth = utf8.RuneCountInString(stripAnsi(scrollSegment))
@@ -416,7 +461,7 @@ func buildTopBorder(border lipgloss.Border, borderStyle, titleStyle, scrollStyle
 
 	// Calculate filler lengths
 	leftFiller := 2 // Small gap after corner
-	rightFiller := innerWidth - leftFiller - titleWidth - scrollWidth
+	rightFiller := innerWidth - leftFiller - titleWidth - secondaryWidth - scrollWidth
 	if rightFiller < 0 {
 		rightFiller = 0
 	}
@@ -426,6 +471,13 @@ func buildTopBorder(border lipgloss.Border, borderStyle, titleStyle, scrollStyle
 	result.WriteString(borderStyle.Render(border.TopLeft))
 	result.WriteString(borderStyle.Render(strings.Repeat(border.Top, leftFiller)))
 	result.WriteString(titleSegment)
+
+	// Add secondary title if present
+	if secondarySegment != "" {
+		result.WriteString(borderStyle.Render("  ")) // Separator
+		result.WriteString(secondarySegment)
+	}
+
 	if scrollSegment != "" {
 		result.WriteString(borderStyle.Render(strings.Repeat(border.Top, rightFiller-scrollWidth)))
 		result.WriteString(scrollSegment)
@@ -486,4 +538,42 @@ func stripAnsi(s string) string {
 		result.WriteRune(r)
 	}
 	return result.String()
+}
+
+// CalculateTitleRegions calculates the X regions for clickable titles in the header.
+// Returns the regions for primary and secondary titles (if present).
+// The regions are relative to the panel's X position.
+func CalculateTitleRegions(opts PanelTitleOptions) (primary, secondary TitleSegmentInfo) {
+	// Primary title always starts at position 3 (after corner + 2 filler)
+	// Format: "[ Title ]" or "[ Title ● ]"
+	primaryStart := 3 // 1 for corner + 2 for left filler
+	primaryLen := 4 + len(opts.Title) // "[ " + title + " ]"
+	if opts.ShowStatus {
+		primaryLen += 2 // " ●" or " ○"
+	}
+
+	primary = TitleSegmentInfo{
+		Title:    opts.Title,
+		StartX:   primaryStart,
+		EndX:     primaryStart + primaryLen,
+		IsActive: opts.PrimaryActive || opts.SecondaryTitle == "", // Active if no secondary
+	}
+
+	if opts.SecondaryTitle != "" {
+		// Secondary title starts after primary + 2 space separator
+		secondaryStart := primary.EndX + 2
+		secondaryLen := 4 + len(opts.SecondaryTitle)
+		if opts.SecondaryShowStatus {
+			secondaryLen += 2
+		}
+
+		secondary = TitleSegmentInfo{
+			Title:    opts.SecondaryTitle,
+			StartX:   secondaryStart,
+			EndX:     secondaryStart + secondaryLen,
+			IsActive: opts.SecondaryActive,
+		}
+	}
+
+	return
 }
