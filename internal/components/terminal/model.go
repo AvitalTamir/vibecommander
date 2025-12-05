@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/selection"
 	"github.com/avitaltamir/vibecommander/internal/theme"
@@ -263,6 +264,17 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tea.PasteMsg:
+		// Handle clipboard paste
+		if !m.Focused() {
+			return m, nil
+		}
+		if m.running && m.pty != nil && msg.Content != "" {
+			// Write pasted text directly to PTY
+			m.pty.Write([]byte(msg.Content))
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		if !m.Focused() {
 			return m, nil
@@ -332,11 +344,23 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			var input []byte
 			hasAlt := key.Mod&tea.ModAlt != 0
 			hasCtrl := key.Mod&tea.ModCtrl != 0
+			hasShift := key.Mod&tea.ModShift != 0
+
+			// Handle Ctrl+V for paste (before generic Ctrl handling)
+			if hasCtrl && key.Code == 'v' {
+				if text, err := clipboard.ReadAll(); err == nil && text != "" {
+					m.pty.Write([]byte(text))
+				}
+				return m, nil
+			}
 
 			// Handle Ctrl key combinations
 			if hasCtrl && key.Code >= 'a' && key.Code <= 'z' {
 				// Ctrl+A=1 through Ctrl+Z=26
 				input = []byte{byte(key.Code - 'a' + 1)}
+			} else if hasShift && key.Code == tea.KeyTab {
+				// Shift+Tab sends ESC [ Z (reverse tab / backtab)
+				input = []byte("\x1b[Z")
 			} else if hasAlt && key.Code >= 'a' && key.Code <= 'z' {
 				// Alt+letter sends ESC + letter (e.g., Alt+B for backward-word)
 				input = []byte{27, byte(key.Code)}
