@@ -2,10 +2,19 @@ package theme
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
+)
+
+// Style cache for frequently used styles
+var (
+	styleCache     = make(map[string]lipgloss.Style)
+	styleCacheMu   sync.RWMutex
+	styleCacheVer  uint64 // Incremented when theme changes to invalidate cache
 )
 
 // Border definitions
@@ -102,9 +111,19 @@ var (
 // Spinner style
 var SpinnerStyle lipgloss.Style
 
+// invalidateStyleCache clears the style cache (called when theme changes)
+func invalidateStyleCache() {
+	styleCacheMu.Lock()
+	styleCache = make(map[string]lipgloss.Style)
+	styleCacheVer++
+	styleCacheMu.Unlock()
+}
+
 // regenerateStyles rebuilds all style variables based on current color values.
 // Called when theme changes.
 func regenerateStyles() {
+	// Invalidate cached styles
+	invalidateStyleCache()
 	// Panel styles
 	PanelInactive = lipgloss.NewStyle().
 		Border(GlowBorder).
@@ -312,8 +331,8 @@ func RenderPanelWithTitle(content string, opts PanelTitleOptions, width, height 
 
 	// Choose border style and colors based on focus
 	var border lipgloss.Border
-	var borderColor lipgloss.Color
-	var titleColor lipgloss.Color
+	var borderColor color.Color
+	var titleColor color.Color
 
 	if focused {
 		border = NeonBorder

@@ -7,15 +7,23 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/selection"
 	"github.com/avitaltamir/vibecommander/internal/theme"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
 )
+
+// Render throttling interval - render at most once per this duration
+// Using 50ms (~20fps) to reduce flicker from animated spinners while still feeling responsive
+const renderInterval = 50 * time.Millisecond
+
+// renderTickMsg triggers a render update
+type renderTickMsg struct{}
 
 // Messages
 type (
@@ -54,6 +62,12 @@ type Model struct {
 
 	// Text selection
 	selection selection.Model
+
+	// Render throttling
+	cachedView      string    // Cached rendered view
+	lastRender      time.Time // Last time we rendered
+	renderScheduled bool      // Whether a render tick is scheduled
+	dirty           bool      // Whether the terminal has new output
 
 	theme *theme.Theme
 	ready bool
@@ -95,11 +109,47 @@ func Start(cmd string, args ...string) tea.Cmd {
 	}
 }
 
+// scheduleRenderTick returns a command to schedule a render tick if not already scheduled
+func (m *Model) scheduleRenderTick() tea.Cmd {
+	if m.renderScheduled {
+		return nil
+	}
+	m.renderScheduled = true
+	// Calculate time until next render (ensure we don't render too fast)
+	timeSinceLastRender := time.Since(m.lastRender)
+	delay := renderInterval - timeSinceLastRender
+	if delay < 0 {
+		delay = 0
+	}
+	return tea.Tick(delay, func(time.Time) tea.Msg {
+		return renderTickMsg{}
+	})
+}
+
 // Update handles messages.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case renderTickMsg:
+		// Render tick - update cached view if dirty
+		m.renderScheduled = false
+		if m.dirty {
+			m.dirty = false
+			m.lastRender = time.Now()
+			newView := m.renderVT()
+			// Only update if content actually changed visually
+			// This prevents flickering from spinner animations that don't change the view
+			if newView != m.cachedView {
+				m.cachedView = newView
+			}
+		}
+		// If still running, schedule another tick to catch any missed updates
+		if m.running && !m.renderScheduled {
+			return m, m.scheduleRenderTick()
+		}
+		return m, nil
+
 	case StartMsg:
 		if m.running {
 			return m, nil
@@ -108,61 +158,43 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case OutputMsg:
 		m.mu.Lock()
-		// Snap to live view on new output
-		m.scrollOffset = 0
+		// Capture top line before writing new output (for scrollback)
+		var prevTopLine string
+		if m.vt != nil && m.scrollOffset == 0 {
+			prevTopLine = m.getTopLine()
+		}
 
 		if m.vt != nil {
-			cols, rows := m.vt.Size()
-
-			// Capture all screen lines before write
-			oldPlainLines := make([]string, rows)
-			oldRenderedLines := make([]string, rows)
-			for row := 0; row < rows; row++ {
-				oldPlainLines[row] = m.getScreenLinePlain(cols, row)
-				oldRenderedLines[row] = m.renderScreenLine(cols, row)
-			}
-
-			// Write data
 			m.vt.Write(msg.Data)
 
-			// Find where the new top line was in the old screen
-			newTopLine := m.getScreenLinePlain(cols, 0)
-			scrollAmount := 0
-
-			if len(strings.TrimSpace(newTopLine)) > 0 {
-				for i := 1; i < rows; i++ {
-					if len(strings.TrimSpace(oldPlainLines[i])) > 0 && oldPlainLines[i] == newTopLine {
-						scrollAmount = i
-						break
+			// Check if the top line changed (content scrolled)
+			// If so, add the previous top line to scrollback
+			if prevTopLine != "" {
+				newTopLine := m.getTopLine()
+				if newTopLine != prevTopLine && strings.TrimSpace(prevTopLine) != "" {
+					m.addToScrollback(prevTopLine)
+					// Trim scrollback if it exceeds max
+					if len(m.scrollback) > m.maxScrollback {
+						m.scrollback = m.scrollback[len(m.scrollback)-m.maxScrollback:]
 					}
 				}
-			}
-
-			// Add scrolled lines to scrollback
-			if scrollAmount > 0 {
-				// Normal scroll - add lines that scrolled off
-				for i := 0; i < scrollAmount; i++ {
-					if len(strings.TrimSpace(oldPlainLines[i])) > 0 {
-						m.addToScrollback(oldRenderedLines[i])
-					}
-				}
-			} else if oldPlainLines[0] != newTopLine && len(strings.TrimSpace(oldPlainLines[0])) > 0 {
-				// Screen changed but couldn't detect scroll amount
-				// This happens with large data chunks - save all non-empty old lines
-				for i := 0; i < rows; i++ {
-					if len(strings.TrimSpace(oldPlainLines[i])) > 0 {
-						m.addToScrollback(oldRenderedLines[i])
-					}
-				}
-			}
-
-			// Trim scrollback if too large
-			if len(m.scrollback) > m.maxScrollback {
-				m.scrollback = m.scrollback[len(m.scrollback)-m.maxScrollback:]
 			}
 		}
+
+		// If user has scrolled into history, maintain their position
+		// by incrementing scrollOffset to compensate for new content
+		// Only do this if we actually added to scrollback (content scrolled)
+		// Don't snap back to live view - let user scroll back manually
+
+		m.dirty = true
 		m.mu.Unlock()
-		return m, m.ContinueReading()
+
+		// Schedule a render tick and continue reading
+		cmds = append(cmds, m.ContinueReading())
+		if cmd := m.scheduleRenderTick(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
 
 	case ExitMsg:
 		m.mu.Lock()
@@ -176,55 +208,67 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.mu.Unlock()
 		return m, nil
 
-	case tea.MouseMsg:
-		// Handle text selection with left button
-		switch msg.Button {
-		case tea.MouseButtonLeft:
-			switch msg.Action {
-			case tea.MouseActionPress:
-				// Start selection
-				line, col := m.screenToTextPosition(msg.X, msg.Y)
-				m.selection.StartSelection(line, col)
-				m.updateSelectionContent()
-				return m, nil
-			case tea.MouseActionMotion:
-				// Update selection during drag
-				if m.selection.Selection.Active {
-					line, col := m.screenToTextPosition(msg.X, msg.Y)
-					m.selection.UpdateSelection(line, col)
-					return m, nil
-				}
-			case tea.MouseActionRelease:
-				// End selection
-				if m.selection.Selection.Active {
-					line, col := m.screenToTextPosition(msg.X, msg.Y)
-					m.selection.UpdateSelection(line, col)
-					m.selection.EndSelection()
-					return m, nil
-				}
-			}
-		case tea.MouseButtonWheelUp:
+	case tea.MouseClickMsg:
+		// Handle text selection start - MouseClickMsg is only for left button
+		mouse := msg.Mouse()
+		line, col := m.screenToTextPosition(mouse.X, mouse.Y)
+		m.selection.StartSelection(line, col)
+		m.updateSelectionContent()
+		return m, nil
+
+	case tea.MouseMotionMsg:
+		// Update selection during drag
+		mouse := msg.Mouse()
+		if m.selection.Selection.Active {
+			line, col := m.screenToTextPosition(mouse.X, mouse.Y)
+			m.selection.UpdateSelection(line, col)
+			return m, nil
+		}
+
+	case tea.MouseReleaseMsg:
+		// End selection
+		mouse := msg.Mouse()
+		if m.selection.Selection.Active {
+			line, col := m.screenToTextPosition(mouse.X, mouse.Y)
+			m.selection.UpdateSelection(line, col)
+			m.selection.EndSelection()
+			return m, nil
+		}
+
+	case tea.MouseWheelMsg:
+		// Handle mouse scroll for scrollback buffer
+		mouse := msg.Mouse()
+		switch mouse.Button {
+		case tea.MouseWheelUp:
 			// Scroll up (into history)
 			maxScroll := len(m.scrollback)
 			m.scrollOffset += 3
 			if m.scrollOffset > maxScroll {
 				m.scrollOffset = maxScroll
 			}
-			return m, nil
-		case tea.MouseButtonWheelDown:
+			// Force re-render when scrolling
+			m.dirty = true
+			m.cachedView = ""
+			return m, m.scheduleRenderTick()
+		case tea.MouseWheelDown:
 			// Scroll down (toward live)
 			m.scrollOffset -= 3
 			if m.scrollOffset < 0 {
 				m.scrollOffset = 0
 			}
-			return m, nil
+			// Force re-render when scrolling
+			m.dirty = true
+			m.cachedView = ""
+			return m, m.scheduleRenderTick()
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if !m.Focused() {
 			return m, nil
 		}
+
+		key := msg.Key()
 
 		// Handle copy (Ctrl+C) when text is selected - copy instead of SIGINT
 		if selection.IsCopyKey(msg.String()) && m.selection.HasSelection() {
@@ -234,110 +278,118 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 		// Clear selection on Escape
-		if msg.Type == tea.KeyEscape && m.selection.HasSelection() {
+		if key.Code == tea.KeyEscape && m.selection.HasSelection() {
 			m.selection.ClearSelection()
 			return m, nil
+		}
+
+		// Handle End key to jump back to live view when scrolled
+		if key.Code == tea.KeyEnd && m.scrollOffset > 0 {
+			m.scrollOffset = 0
+			m.dirty = true
+			m.cachedView = ""
+			return m, m.scheduleRenderTick()
+		}
+
+		// Handle Home key to jump to top of scrollback
+		if key.Code == tea.KeyHome && len(m.scrollback) > 0 {
+			m.scrollOffset = len(m.scrollback)
+			m.dirty = true
+			m.cachedView = ""
+			return m, m.scheduleRenderTick()
+		}
+
+		// Handle Page Up/Down for faster scrolling when not running or when scrolled
+		if m.scrollOffset > 0 || !m.running {
+			_, h := m.Size()
+			pageSize := h - 2
+			if pageSize < 1 {
+				pageSize = 10
+			}
+			if key.Code == tea.KeyPgUp {
+				maxScroll := len(m.scrollback)
+				m.scrollOffset += pageSize
+				if m.scrollOffset > maxScroll {
+					m.scrollOffset = maxScroll
+				}
+				m.dirty = true
+				m.cachedView = ""
+				return m, m.scheduleRenderTick()
+			}
+			if key.Code == tea.KeyPgDown {
+				m.scrollOffset -= pageSize
+				if m.scrollOffset < 0 {
+					m.scrollOffset = 0
+				}
+				m.dirty = true
+				m.cachedView = ""
+				return m, m.scheduleRenderTick()
+			}
 		}
 
 		// Send input to PTY if running
 		if m.running && m.pty != nil {
 			var input []byte
+			hasAlt := key.Mod&tea.ModAlt != 0
+			hasCtrl := key.Mod&tea.ModCtrl != 0
 
-			switch msg.Type {
-			case tea.KeyEnter:
-				input = []byte("\r")
-			case tea.KeyBackspace:
-				if msg.Alt {
-					input = []byte{27, 127} // ESC + DEL for Alt+Backspace (delete word)
-				} else {
-					input = []byte{127}
-				}
-			case tea.KeyTab:
-				input = []byte("\t")
-			case tea.KeyShiftTab:
-				input = []byte("\x1b[Z") // Shift+Tab (CSI Z / backtab)
-			case tea.KeySpace:
-				input = []byte(" ")
-			// Ctrl keys (Ctrl+A=1 through Ctrl+Z=26)
-			case tea.KeyCtrlA:
-				input = []byte{1}
-			case tea.KeyCtrlB:
-				input = []byte{2}
-			case tea.KeyCtrlC:
-				input = []byte{3}
-			case tea.KeyCtrlD:
-				input = []byte{4}
-			case tea.KeyCtrlE:
-				input = []byte{5}
-			case tea.KeyCtrlF:
-				input = []byte{6}
-			case tea.KeyCtrlG:
-				input = []byte{7}
-			case tea.KeyCtrlJ:
-				input = []byte{10}
-			case tea.KeyCtrlK:
-				input = []byte{11}
-			case tea.KeyCtrlL:
-				input = []byte{12}
-			case tea.KeyCtrlN:
-				input = []byte{14}
-			case tea.KeyCtrlO:
-				input = []byte{15}
-			case tea.KeyCtrlP:
-				input = []byte{16}
-			case tea.KeyCtrlR:
-				input = []byte{18}
-			case tea.KeyCtrlS:
-				input = []byte{19}
-			case tea.KeyCtrlT:
-				input = []byte{20}
-			case tea.KeyCtrlU:
-				input = []byte{21}
-			case tea.KeyCtrlV:
-				input = []byte{22}
-			case tea.KeyCtrlW:
-				input = []byte{23}
-			case tea.KeyCtrlX:
-				input = []byte{24}
-			case tea.KeyCtrlY:
-				input = []byte{25}
-			case tea.KeyCtrlZ:
-				input = []byte{26}
-			case tea.KeyUp:
-				input = []byte("\x1b[A")
-			case tea.KeyDown:
-				input = []byte("\x1b[B")
-			case tea.KeyRight:
-				input = []byte("\x1b[C")
-			case tea.KeyLeft:
-				input = []byte("\x1b[D")
-			case tea.KeyEscape:
-				input = []byte{27}
-			case tea.KeyRunes:
-				// Filter out mouse/escape sequence fragments
-				runeStr := string(msg.Runes)
-				if looksLikeMouseSequence(runeStr) || looksLikeEscapeFragment(runeStr) {
-					return m, nil
-				}
-				// Check for Alt modifier (sends ESC + char)
-				if msg.Alt {
-					for _, r := range msg.Runes {
-						input = append(input, 27) // ESC
-						input = append(input, byte(r))
+			// Handle Ctrl key combinations
+			if hasCtrl && key.Code >= 'a' && key.Code <= 'z' {
+				// Ctrl+A=1 through Ctrl+Z=26
+				input = []byte{byte(key.Code - 'a' + 1)}
+			} else {
+				// Handle special keys and regular input
+				switch key.Code {
+				case tea.KeyEnter:
+					input = []byte("\r")
+				case tea.KeyBackspace:
+					if hasAlt {
+						input = []byte{27, 127} // ESC + DEL for Alt+Backspace (delete word)
+					} else {
+						input = []byte{127}
 					}
-				} else {
-					input = []byte(runeStr)
+				case tea.KeyTab:
+					input = []byte("\t")
+				case tea.KeySpace:
+					input = []byte(" ")
+				case tea.KeyUp:
+					input = []byte("\x1b[A")
+				case tea.KeyDown:
+					input = []byte("\x1b[B")
+				case tea.KeyRight:
+					input = []byte("\x1b[C")
+				case tea.KeyLeft:
+					input = []byte("\x1b[D")
+				case tea.KeyEscape:
+					input = []byte{27}
+				case tea.KeyHome:
+					input = []byte("\x1b[H")
+				case tea.KeyEnd:
+					input = []byte("\x1b[F")
+				case tea.KeyPgUp:
+					input = []byte("\x1b[5~")
+				case tea.KeyPgDown:
+					input = []byte("\x1b[6~")
+				case tea.KeyDelete:
+					input = []byte("\x1b[3~")
+				default:
+					// Regular character input
+					if key.Text != "" {
+						// Filter out mouse/escape sequence fragments
+						if looksLikeMouseSequence(key.Text) || looksLikeEscapeFragment(key.Text) {
+							return m, nil
+						}
+						// Check for Alt modifier (sends ESC + char)
+						if hasAlt {
+							for _, r := range key.Text {
+								input = append(input, 27) // ESC
+								input = append(input, byte(r))
+							}
+						} else {
+							input = []byte(key.Text)
+						}
+					}
 				}
-			case tea.KeyHome:
-				input = []byte("\x1b[H")
-			case tea.KeyEnd:
-				input = []byte("\x1b[F")
-			case tea.KeyPgUp:
-				input = []byte("\x1b[5~")
-			case tea.KeyPgDown:
-				input = []byte("\x1b[6~")
-			case tea.KeyDelete:
-				input = []byte("\x1b[3~")
 			}
 
 			if len(input) > 0 {
@@ -417,9 +469,35 @@ func (m Model) View() string {
 			Render("Initializing terminal...")
 	}
 
-	// Render the virtual terminal screen
+	// Return cached view if available, otherwise render fresh
 	if m.vt != nil {
-		return m.renderVT()
+		var content string
+		if m.cachedView != "" {
+			content = m.cachedView
+		} else {
+			content = m.renderVT()
+		}
+
+		// Add scroll indicator if scrolled into history
+		if m.scrollOffset > 0 {
+			indicator := lipgloss.NewStyle().
+				Foreground(theme.CyberCyan).
+				Bold(true).
+				Render(fmt.Sprintf(" ↑ SCROLL: %d lines (End to return) ", m.scrollOffset))
+			// Place indicator at top-right of terminal area
+			indicatorWidth := lipgloss.Width(indicator)
+			if indicatorWidth < w {
+				padding := strings.Repeat(" ", w-indicatorWidth)
+				indicator = padding + indicator
+			}
+			lines := strings.Split(content, "\n")
+			if len(lines) > 0 {
+				// Replace first line with indicator overlay
+				lines[0] = indicator
+				content = strings.Join(lines, "\n")
+			}
+		}
+		return content
 	}
 
 	return lipgloss.NewStyle().
@@ -743,6 +821,10 @@ func (m Model) SetSize(width, height int) Model {
 
 	// Reset scroll offset on resize to show live view
 	m.scrollOffset = 0
+
+	// Invalidate cached view on resize
+	m.cachedView = ""
+	m.dirty = true
 
 	// Resize virtual terminal if it exists
 	if m.vt != nil && width > 0 && termHeight > 0 {

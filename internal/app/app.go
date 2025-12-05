@@ -16,9 +16,9 @@ import (
 	"github.com/avitaltamir/vibecommander/internal/layout"
 	"github.com/avitaltamir/vibecommander/internal/state"
 	"github.com/avitaltamir/vibecommander/internal/theme"
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -66,7 +66,10 @@ type Model struct {
 	gitRefreshTime time.Time // Last git refresh time for debouncing
 
 	// File watcher
-	watcher *fsnotify.Watcher
+	watcher              *fsnotify.Watcher
+	lastFileChangeTime   time.Time // Last file change time for debouncing
+	pendingFileChanges   map[string]fsnotify.Op // Pending file changes to process
+	fileChangeDebouncing bool // Whether we're waiting to process file changes
 
 	// Window dimensions
 	width  int
@@ -102,19 +105,20 @@ func New() Model {
 	theme.SetThemeIndex(savedState.ThemeIndex)
 
 	return Model{
-		fileTree:        ft,
-		content:         contentPane,
-		miniBuffer:      minibuffer.New(),
-		focus:           PanelFileTree,
-		miniVisible:     false,
-		theme:           theme.DefaultTheme(),
-		keys:            DefaultKeyMap(),
-		gitProvider:     gitProvider,
-		workDir:         workDir,
-		isGitRepo:       gitProvider.IsRepo(),
-		watcher:         watcher,
-		restoreAI:       savedState.AIWindowOpen,
-		initialThemeIdx: savedState.ThemeIndex,
+		fileTree:           ft,
+		content:            contentPane,
+		miniBuffer:         minibuffer.New(),
+		focus:              PanelFileTree,
+		miniVisible:        false,
+		theme:              theme.DefaultTheme(),
+		keys:               DefaultKeyMap(),
+		gitProvider:        gitProvider,
+		workDir:            workDir,
+		isGitRepo:          gitProvider.IsRepo(),
+		watcher:            watcher,
+		pendingFileChanges: make(map[string]fsnotify.Op),
+		restoreAI:          savedState.AIWindowOpen,
+		initialThemeIdx:    savedState.ThemeIndex,
 	}
 }
 
@@ -187,34 +191,34 @@ func (m Model) addWatchRecursive(root string) {
 func (m Model) watchFilesCmd() tea.Cmd {
 	return func() tea.Msg {
 		if m.watcher == nil {
-			// No watcher, use a ticker to retry later
-			time.Sleep(500 * time.Millisecond)
-			return FileChangeMsg{} // Empty msg will restart watch
+			return nil // No watcher, don't keep retrying
 		}
 
-		select {
-		case event, ok := <-m.watcher.Events:
-			if !ok {
-				// Channel closed, sleep and retry
-				time.Sleep(500 * time.Millisecond)
-				return FileChangeMsg{}
+		// Block until we get an actual file change event
+		// Don't use timeouts - they cause unnecessary redraws
+		for {
+			select {
+			case event, ok := <-m.watcher.Events:
+				if !ok {
+					return nil // Channel closed
+				}
+				return FileChangeMsg{Path: event.Name, Op: event.Op}
+			case <-m.watcher.Errors:
+				// Ignore errors but continue watching
+				continue
 			}
-			return FileChangeMsg{Path: event.Name, Op: event.Op}
-		case <-m.watcher.Errors:
-			// Ignore errors but continue watching
-			return FileChangeMsg{}
-		case <-time.After(5 * time.Second):
-			// Periodic timeout to ensure watch stays alive
-			return FileChangeMsg{}
 		}
 	}
 }
 
 // gitDebounceInterval is the minimum time between git refreshes
-const gitDebounceInterval = 500 * time.Millisecond
+const gitDebounceInterval = 2 * time.Second
 
 // gitTickInterval is how often we poll git status
-const gitTickInterval = 1 * time.Second
+const gitTickInterval = 10 * time.Second
+
+// fileChangeDebounceInterval is the minimum time between file change processing
+const fileChangeDebounceInterval = 500 * time.Millisecond
 
 // refreshGitStatus fetches the current git status
 func (m Model) refreshGitStatus() tea.Cmd {
@@ -248,6 +252,20 @@ func gitTick() tea.Cmd {
 	})
 }
 
+// fileChangeDebounceMsg is sent after the debounce interval to process pending file changes
+type fileChangeDebounceMsg struct{}
+
+// scheduleFileChangeDebounce schedules processing of pending file changes
+func (m *Model) scheduleFileChangeDebounce() tea.Cmd {
+	if m.fileChangeDebouncing {
+		return nil
+	}
+	m.fileChangeDebouncing = true
+	return tea.Tick(fileChangeDebounceInterval, func(t time.Time) tea.Msg {
+		return fileChangeDebounceMsg{}
+	})
+}
+
 // Update handles messages and updates the model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -277,6 +295,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case GitStatusMsg:
+		// Skip update if nothing changed (reduces flickering)
+		if m.isGitRepo == msg.IsRepo && gitStatusEqual(m.gitStatus, msg.Status) {
+			return m, nil
+		}
 		m.isGitRepo = msg.IsRepo
 		m.gitStatus = msg.Status
 		// Update file tree with git status
@@ -286,13 +308,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case gitTickMsg:
-		// Periodic git status refresh with debouncing
-		var cmds []tea.Cmd
+		// Schedule next tick - always do this
+		nextTick := gitTick()
+		// Only refresh if debounce allows
 		if cmd := m.refreshGitStatusDebounced(); cmd != nil {
-			cmds = append(cmds, cmd)
+			return m, tea.Batch(cmd, nextTick)
 		}
-		cmds = append(cmds, gitTick()) // Schedule next tick
-		return m, tea.Batch(cmds...)
+		// Just reschedule, no state change needed
+		return m, nextTick
 
 	case FileChangeMsg:
 		// Always continue watching for more events
@@ -313,10 +336,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Refresh the directory containing the changed file
-		dirPath := filepath.Dir(msg.Path)
-		if cmd := m.fileTree.RefreshDir(dirPath); cmd != nil {
+		// Add to pending file changes (debounce multiple rapid changes)
+		m.pendingFileChanges[msg.Path] = msg.Op
+
+		// Schedule debounced processing
+		if cmd := m.scheduleFileChangeDebounce(); cmd != nil {
 			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
+
+	case fileChangeDebounceMsg:
+		// Process all pending file changes
+		m.fileChangeDebouncing = false
+
+		// Collect unique directories to refresh
+		dirsToRefresh := make(map[string]bool)
+		for path := range m.pendingFileChanges {
+			dirPath := filepath.Dir(path)
+			dirsToRefresh[dirPath] = true
+		}
+
+		// Clear pending changes
+		m.pendingFileChanges = make(map[string]fsnotify.Op)
+
+		// Refresh each affected directory
+		for dirPath := range dirsToRefresh {
+			if cmd := m.fileTree.RefreshDir(dirPath); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
 
 		// Refresh git status (debounced to avoid excessive calls)
@@ -325,7 +372,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// Handle quit dialog first
 		if m.showQuit {
 			switch msg.String() {
@@ -512,7 +559,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 		return m, tea.Batch(cmds...)
 
-	case tea.MouseMsg:
+	case tea.MouseClickMsg:
 		// Handle mouse clicks to focus panes and interact with content
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 			targetPanel := m.panelAtPosition(msg.X, msg.Y)
@@ -537,8 +584,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if targetPanel != PanelNone && targetPanel != m.focus {
 				m = m.setFocus(targetPanel)
 			}
+		mouse := msg.Mouse()
+		targetPanel := m.panelAtPosition(mouse.X, mouse.Y)
+		if targetPanel != PanelNone && targetPanel != m.focus {
+			m = m.setFocus(targetPanel)
 		}
-		// Always route mouse events to the appropriate panel for scrolling/interaction
+		// Route click to the appropriate panel
+		cmd := m.routeMouseClickToPanel(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
+
+	case tea.MouseWheelMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg:
+		// Route other mouse events to the appropriate panel for scrolling/interaction
 		cmd := m.routeMouseToPanel(msg)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
@@ -622,9 +681,12 @@ func (m *Model) routeToFocused(msg tea.Msg) tea.Cmd {
 }
 
 // View renders the application.
-func (m Model) View() string {
+func (m Model) View() tea.View {
 	if !m.ready {
-		return "Initializing..."
+		v := tea.NewView("Initializing...")
+		v.AltScreen = true
+		v.MouseMode = tea.MouseModeCellMotion
+		return v
 	}
 
 	var view string
@@ -673,15 +735,24 @@ func (m Model) View() string {
 
 	// Show help overlay if active
 	if m.showHelp {
-		return m.renderHelpOverlay(view)
+		v := tea.NewView(m.renderHelpOverlay(view))
+		v.AltScreen = true
+		v.MouseMode = tea.MouseModeCellMotion
+		return v
 	}
 
 	// Show quit confirmation dialog
 	if m.showQuit {
-		return m.renderQuitDialog(view)
+		v := tea.NewView(m.renderQuitDialog(view))
+		v.AltScreen = true
+		v.MouseMode = tea.MouseModeCellMotion
+		return v
 	}
 
-	return view
+	v := tea.NewView(view)
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 // renderLeftPanel renders the file tree panel.
@@ -901,6 +972,29 @@ func itoa(n int) string {
 	return s
 }
 
+// gitStatusEqual compares two git statuses for equality
+func gitStatusEqual(a, b *git.Status) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Branch != b.Branch || a.IsDirty != b.IsDirty || a.Ahead != b.Ahead || a.Behind != b.Behind {
+		return false
+	}
+	if len(a.Files) != len(b.Files) || len(a.Untracked) != len(b.Untracked) {
+		return false
+	}
+	for path, statusA := range a.Files {
+		statusB, ok := b.Files[path]
+		if !ok || statusA != statusB {
+			return false
+		}
+	}
+	return true
+}
+
 // setFocus changes focus to the specified panel.
 func (m Model) setFocus(target PanelID) Model {
 	// Blur previously focused component
@@ -1095,32 +1189,58 @@ func (m Model) detectHeaderClick(x, y int) content.ContentSource {
 	}
 
 	return content.SourceNone
-}
-
-// routeMouseToPanel routes mouse events to the panel at the mouse position.
-// This allows scrolling in non-focused panels.
-func (m *Model) routeMouseToPanel(msg tea.MouseMsg) tea.Cmd {
+// routeMouseClickToPanel routes mouse click events to the panel at the mouse position.
+func (m *Model) routeMouseClickToPanel(msg tea.MouseClickMsg) tea.Cmd {
 	var cmd tea.Cmd
+	mouse := msg.Mouse()
 
-	targetPanel := m.panelAtPosition(msg.X, msg.Y)
+	targetPanel := m.panelAtPosition(mouse.X, mouse.Y)
 
-	// Adjust coordinates relative to panel
 	switch targetPanel {
 	case PanelFileTree:
 		m.fileTree, cmd = m.fileTree.Update(msg)
 	case PanelContent:
-		// Adjust X coordinate for content panel offset
-		leftW := m.layout.LeftWidth
-		adjustedMsg := msg
-		adjustedMsg.X = msg.X - leftW
-		m.content, cmd = m.content.Update(adjustedMsg)
+		m.content, cmd = m.content.Update(msg)
 	case PanelMiniBuffer:
 		if m.miniVisible {
-			// Adjust Y coordinate for mini buffer offset
-			_, miniY, _, _ := m.layout.MiniBufferBounds()
-			adjustedMsg := msg
-			adjustedMsg.Y = msg.Y - miniY
-			m.miniBuffer, cmd = m.miniBuffer.Update(adjustedMsg)
+			m.miniBuffer, cmd = m.miniBuffer.Update(msg)
+		}
+	}
+
+	return cmd
+}
+
+// routeMouseToPanel routes mouse events to the panel at the mouse position.
+// This allows scrolling in non-focused panels.
+func (m *Model) routeMouseToPanel(msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+
+	// Get mouse coordinates from the message
+	var mouseX, mouseY int
+	switch mm := msg.(type) {
+	case tea.MouseWheelMsg:
+		mouse := mm.Mouse()
+		mouseX, mouseY = mouse.X, mouse.Y
+	case tea.MouseMotionMsg:
+		mouse := mm.Mouse()
+		mouseX, mouseY = mouse.X, mouse.Y
+	case tea.MouseReleaseMsg:
+		mouse := mm.Mouse()
+		mouseX, mouseY = mouse.X, mouse.Y
+	default:
+		return nil
+	}
+
+	targetPanel := m.panelAtPosition(mouseX, mouseY)
+
+	switch targetPanel {
+	case PanelFileTree:
+		m.fileTree, cmd = m.fileTree.Update(msg)
+	case PanelContent:
+		m.content, cmd = m.content.Update(msg)
+	case PanelMiniBuffer:
+		if m.miniVisible {
+			m.miniBuffer, cmd = m.miniBuffer.Update(msg)
 		}
 	}
 

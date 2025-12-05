@@ -8,9 +8,9 @@ import (
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/git"
 	"github.com/avitaltamir/vibecommander/internal/theme"
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Messages
@@ -90,8 +90,15 @@ type Model struct {
 	showHidden bool
 	loading    map[string]bool // Paths currently being loaded
 
-	gitStatus *git.Status // Current git status
-	workDir   string      // Working directory for relative paths
+	gitStatus        *git.Status // Current git status
+	gitStatusVersion uint64      // Version counter for cache invalidation
+	workDir          string      // Working directory for relative paths
+
+	// Cached directory git status (computed when git status updates)
+	dirGitStatusCache map[string]string // path -> cached indicator
+
+	// Cached view for dirty checking
+	cachedView string
 
 	keys  KeyMap
 	theme *theme.Theme
@@ -102,11 +109,12 @@ func New() Model {
 	cwd, _ := os.Getwd()
 
 	m := Model{
-		loading:    make(map[string]bool),
-		keys:       DefaultKeyMap(),
-		theme:      theme.DefaultTheme(),
-		workDir:    cwd,
-		showHidden: true,
+		loading:           make(map[string]bool),
+		dirGitStatusCache: make(map[string]string),
+		keys:              DefaultKeyMap(),
+		theme:             theme.DefaultTheme(),
+		workDir:           cwd,
+		showHidden:        true,
 	}
 
 	// Initialize root to current working directory
@@ -149,22 +157,26 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case LoadedMsg:
 		return m.handleLoaded(msg)
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if !m.Focused() {
 			return m, nil
 		}
 		return m.handleKey(msg)
 
-	case tea.MouseMsg:
-		// Always handle mouse events - app.go handles focus management
+	case tea.MouseWheelMsg:
+		// Always handle mouse wheel - app.go handles focus management
+		return m.handleMouseWheel(msg)
+
+	case tea.MouseClickMsg:
+		// Always handle mouse clicks - app.go handles focus management
 		// This allows click-to-select even when the panel wasn't focused
-		return m.handleMouse(msg)
+		return m.handleMouseClick(msg)
 	}
 
 	return m, nil
 }
 
-func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Up):
 		m.moveCursor(-1)
@@ -203,20 +215,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
-	switch msg.Button {
-	case tea.MouseButtonWheelUp:
+func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) (Model, tea.Cmd) {
+	mouse := msg.Mouse()
+	switch mouse.Button {
+	case tea.MouseWheelUp:
 		m.moveCursor(-3)
-	case tea.MouseButtonWheelDown:
+	case tea.MouseWheelDown:
 		m.moveCursor(3)
-	case tea.MouseButtonLeft:
-		if msg.Action == tea.MouseActionPress {
-			// Calculate which item was clicked
-			clickedIdx := m.offset + msg.Y - 2 // Account for border and title
-			if clickedIdx >= 0 && clickedIdx < len(m.visible) {
-				m.cursor = clickedIdx
-				return m.handleSelect()
-			}
+	}
+	return m, nil
+}
+
+func (m Model) handleMouseClick(msg tea.MouseClickMsg) (Model, tea.Cmd) {
+	mouse := msg.Mouse()
+	if mouse.Button == tea.MouseLeft {
+		// Calculate which item was clicked
+		clickedIdx := m.offset + mouse.Y - 2 // Account for border and title
+		if clickedIdx >= 0 && clickedIdx < len(m.visible) {
+			m.cursor = clickedIdx
+			return m.handleSelect()
 		}
 	}
 	return m, nil
@@ -375,6 +392,9 @@ func (m *Model) rebuildVisible() {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
+
+	// Mark dirty since visible nodes changed
+	m.MarkDirty()
 }
 
 func (m Model) loadChildren(path string) tea.Cmd {
@@ -434,6 +454,16 @@ func (m Model) View() string {
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
 
 	return content
+}
+
+// ViewCached returns the cached view if not dirty, otherwise renders fresh.
+func (m *Model) ViewCached() string {
+	if !m.IsDirty() && m.cachedView != "" {
+		return m.cachedView
+	}
+	m.cachedView = m.View()
+	m.ClearDirty()
+	return m.cachedView
 }
 
 func (m Model) renderNode(node *Node, selected bool, maxWidth int) string {
@@ -496,55 +526,14 @@ func (m Model) renderNode(node *Node, selected bool, maxWidth int) string {
 
 // getGitIndicator returns a styled git status indicator for the node
 func (m Model) getGitIndicator(node *Node) string {
-	if m.gitStatus == nil || m.workDir == "" {
-		return ""
+	// Use cached indicator if it's up to date
+	if node.GitStatusVersion == m.gitStatusVersion {
+		return node.CachedGitIndicator
 	}
 
-	// Get relative path from workdir
-	relPath, err := filepath.Rel(m.workDir, node.Path)
-	if err != nil {
-		return ""
-	}
-
-	// Check for exact match
-	if status, ok := m.gitStatus.Files[relPath]; ok {
-		return m.renderGitStatus(status)
-	}
-
-	// For directories, check status of all children
-	if node.IsDir {
-		dirPrefix := relPath + string(filepath.Separator)
-		hasChanges := false
-		allStaged := true
-		hasUntracked := false
-
-		for path, status := range m.gitStatus.Files {
-			if strings.HasPrefix(path, dirPrefix) {
-				hasChanges = true
-
-				// Check if untracked
-				if status.Staging == git.StatusUntracked || status.Worktree == git.StatusUntracked {
-					hasUntracked = true
-					allStaged = false
-				} else if status.Worktree != git.StatusUnmodified && status.Worktree != ' ' {
-					// Has unstaged changes
-					allStaged = false
-				}
-			}
-		}
-
-		if hasChanges {
-			if hasUntracked {
-				return lipgloss.NewStyle().Foreground(theme.LaserPurple).Render("●")
-			} else if allStaged {
-				return lipgloss.NewStyle().Foreground(theme.MatrixGreen).Render("●")
-			} else {
-				return lipgloss.NewStyle().Foreground(theme.ElectricYellow).Render("●")
-			}
-		}
-	}
-
-	return ""
+	// Cache is stale, update it
+	m.updateNodeGitIndicator(node)
+	return node.CachedGitIndicator
 }
 
 // renderGitStatus returns a styled indicator for a file's git status
@@ -715,7 +704,104 @@ func (m Model) SetSize(width, height int) Model {
 // SetGitStatus updates the git status for the file tree.
 func (m Model) SetGitStatus(status *git.Status) Model {
 	m.gitStatus = status
+	m.gitStatusVersion++
+
+	// Rebuild directory git status cache
+	m.dirGitStatusCache = make(map[string]string)
+	if status != nil && m.workDir != "" {
+		m.buildDirGitStatusCache(status)
+	}
+
+	// Update cached indicators on visible nodes
+	for _, node := range m.visible {
+		m.updateNodeGitIndicator(node)
+	}
+
+	// Mark dirty since git status changed
+	m.MarkDirty()
+
 	return m
+}
+
+// buildDirGitStatusCache precomputes git status indicators for directories
+func (m *Model) buildDirGitStatusCache(status *git.Status) {
+	// Group files by directory
+	dirStatus := make(map[string]struct {
+		hasChanges   bool
+		allStaged    bool
+		hasUntracked bool
+	})
+
+	for path, fileStatus := range status.Files {
+		// Walk up the directory tree
+		dir := filepath.Dir(path)
+		for dir != "." && dir != "" {
+			ds := dirStatus[dir]
+			ds.hasChanges = true
+
+			// Check if untracked
+			if fileStatus.Staging == git.StatusUntracked || fileStatus.Worktree == git.StatusUntracked {
+				ds.hasUntracked = true
+				ds.allStaged = false
+			} else if fileStatus.Worktree != git.StatusUnmodified && fileStatus.Worktree != ' ' {
+				// Has unstaged changes
+				ds.allStaged = false
+			} else if !ds.hasUntracked && ds.allStaged {
+				ds.allStaged = true
+			}
+
+			dirStatus[dir] = ds
+			dir = filepath.Dir(dir)
+		}
+	}
+
+	// Pre-render indicators for all affected directories
+	for dir, ds := range dirStatus {
+		fullPath := filepath.Join(m.workDir, dir)
+		if ds.hasUntracked {
+			m.dirGitStatusCache[fullPath] = lipgloss.NewStyle().Foreground(theme.LaserPurple).Render("●")
+		} else if ds.allStaged {
+			m.dirGitStatusCache[fullPath] = lipgloss.NewStyle().Foreground(theme.MatrixGreen).Render("●")
+		} else {
+			m.dirGitStatusCache[fullPath] = lipgloss.NewStyle().Foreground(theme.ElectricYellow).Render("●")
+		}
+	}
+}
+
+// updateNodeGitIndicator computes and caches the git indicator for a node
+func (m *Model) updateNodeGitIndicator(node *Node) {
+	if m.gitStatus == nil || m.workDir == "" {
+		node.CachedGitIndicator = ""
+		node.GitStatusVersion = m.gitStatusVersion
+		return
+	}
+
+	// Get relative path from workdir
+	relPath, err := filepath.Rel(m.workDir, node.Path)
+	if err != nil {
+		node.CachedGitIndicator = ""
+		node.GitStatusVersion = m.gitStatusVersion
+		return
+	}
+
+	// Check for exact match (files)
+	if status, ok := m.gitStatus.Files[relPath]; ok {
+		node.CachedGitIndicator = m.renderGitStatus(status)
+		node.GitStatusVersion = m.gitStatusVersion
+		return
+	}
+
+	// For directories, use cached directory status
+	if node.IsDir {
+		if cached, ok := m.dirGitStatusCache[node.Path]; ok {
+			node.CachedGitIndicator = cached
+			node.GitStatusVersion = m.gitStatusVersion
+			return
+		}
+	}
+
+	node.CachedGitIndicator = ""
+	node.GitStatusVersion = m.gitStatusVersion
 }
 
 // ScrollPercent returns the current scroll position as a percentage (0-100).

@@ -19,6 +19,10 @@ type Node struct {
 	Expanded bool  // Whether directory is expanded in view
 	Size     int64 // File size in bytes
 	ModTime  int64 // Modification time as unix timestamp
+
+	// Cached git status (computed when git status updates)
+	CachedGitIndicator string // Pre-rendered git status indicator
+	GitStatusVersion   uint64 // Version number to detect stale cache
 }
 
 // NewNode creates a new node from a path.

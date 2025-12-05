@@ -5,9 +5,9 @@ import (
 
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/theme"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Messages
@@ -54,7 +54,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		return m, nil
 
-	case tea.MouseMsg:
+	case tea.MouseWheelMsg:
 		m.viewport, cmd = m.viewport.Update(msg)
 		cmds = append(cmds, cmd)
 		return m, tea.Batch(cmds...)
@@ -73,7 +73,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if !m.Focused() {
 			return m, nil
 		}
@@ -257,13 +257,16 @@ func (m Model) SetSize(width, height int) Model {
 	m.Base.SetSize(width, height)
 
 	if !m.ready {
-		m.viewport = viewport.New(width, height)
+		m.viewport = viewport.New(
+			viewport.WithWidth(width),
+			viewport.WithHeight(height),
+		)
 		m.viewport.MouseWheelEnabled = true
 		m.viewport.MouseWheelDelta = 3
 		m.ready = true
 	} else {
-		m.viewport.Width = width
-		m.viewport.Height = height
+		m.viewport.SetWidth(width)
+		m.viewport.SetHeight(height)
 	}
 
 	if m.diff != "" {

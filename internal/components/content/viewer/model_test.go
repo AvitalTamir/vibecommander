@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -147,7 +147,7 @@ func TestUpdate(t *testing.T) {
 		m = m.Focus()
 
 		// Simulate page down key (should be handled by viewport)
-		msg := tea.KeyMsg{Type: tea.KeyPgDown}
+		msg := tea.KeyPressMsg{Code: tea.KeyPgDown}
 		_, cmd := m.Update(msg)
 
 		// Just verify no panic and command returned
@@ -159,7 +159,7 @@ func TestUpdate(t *testing.T) {
 		m = m.SetSize(80, 24)
 		// Not focused
 
-		msg := tea.KeyMsg{Type: tea.KeyPgDown}
+		msg := tea.KeyPressMsg{Code: tea.KeyPgDown}
 		_, cmd := m.Update(msg)
 
 		// Should still return without error
@@ -171,10 +171,7 @@ func TestUpdate(t *testing.T) {
 		m = m.SetSize(80, 24)
 		// Mouse should work even when not focused
 
-		msg := tea.MouseMsg{
-			Button: tea.MouseButtonWheelDown,
-			Action: tea.MouseActionPress,
-		}
+		msg := tea.MouseWheelMsg{}
 		_, cmd := m.Update(msg)
 
 		// Should handle without error
