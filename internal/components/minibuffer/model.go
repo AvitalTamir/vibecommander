@@ -745,6 +745,23 @@ func (m Model) Running() bool {
 	return m.running
 }
 
+// ScrollPercent returns the scroll position as a percentage (0-100).
+// Returns -1 if scrollback is not available or not scrolled.
+func (m Model) ScrollPercent() float64 {
+	if len(m.scrollback) == 0 || m.scrollOffset == 0 {
+		return -1
+	}
+
+	// Calculate percentage based on scroll position
+	// scrollOffset == len(scrollback) means we're at the top (100%)
+	// scrollOffset == 0 means we're at the bottom (live view)
+	percent := float64(m.scrollOffset) / float64(len(m.scrollback)) * 100
+	if percent > 100 {
+		percent = 100
+	}
+	return percent
+}
+
 // Stop stops the running shell.
 func (m *Model) Stop() {
 	if m.cmd != nil && m.cmd.Process != nil {

@@ -421,18 +421,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.FocusContent):
+			// If mini buffer is fullscreen, exit it and make content fullscreen
+			if m.fullscreen == PanelMiniBuffer {
+				m.fullscreen = PanelContent
+				m = m.updateSizes()
+				m = m.setFocus(PanelContent)
+				return m, nil
+			}
 			// If content is already fullscreen, just exit fullscreen
 			if m.fullscreen == PanelContent {
 				m.fullscreen = PanelNone
 				m = m.updateSizes()
 				return m, nil
 			}
-			// Close mini buffer if open
-			if m.miniVisible {
-				m.miniVisible = false
-				m.layout = layout.Calculate(m.width, m.height, m.miniVisible)
-				m = m.updateSizes()
-			}
+			// Hide mini buffer when going fullscreen (but keep it open)
 			// Enter fullscreen if already focused
 			if m.focus == PanelContent {
 				m.fullscreen = PanelContent
@@ -442,24 +444,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.ToggleMini):
-			// Exit fullscreen if in fullscreen mode
-			if m.fullscreen != PanelNone {
+			// Cycle: closed -> open (panel) -> fullscreen -> open (panel)
+			if m.fullscreen == PanelMiniBuffer {
+				// Currently fullscreen, go back to panel view
 				m.fullscreen = PanelNone
 				m = m.updateSizes()
+				return m, nil
 			}
-			// Always toggle terminal on/off
-			m.miniVisible = !m.miniVisible
-			m.layout = layout.Calculate(m.width, m.height, m.miniVisible)
-			m = m.updateSizes()
-			if m.miniVisible {
+			if m.fullscreen == PanelContent {
+				// Content is fullscreen, exit it and show mini buffer fullscreen
+				m.fullscreen = PanelMiniBuffer
+				if !m.miniVisible {
+					m.miniVisible = true
+					m.layout = layout.Calculate(m.width, m.height, m.miniVisible)
+				}
+				m = m.updateSizes()
 				m = m.setFocus(PanelMiniBuffer)
 				// Start shell if not running
 				if !m.miniBuffer.Running() {
 					return m, m.miniBuffer.StartShell()
 				}
-			} else {
-				m = m.setFocus(m.prevFocus)
+				return m, nil
 			}
+			if !m.miniVisible {
+				// Closed, open it in panel mode
+				m.miniVisible = true
+				m.layout = layout.Calculate(m.width, m.height, m.miniVisible)
+				m = m.updateSizes()
+				m = m.setFocus(PanelMiniBuffer)
+				// Start shell if not running
+				if !m.miniBuffer.Running() {
+					return m, m.miniBuffer.StartShell()
+				}
+				return m, nil
+			}
+			// Already open in panel mode
+			if m.focus == PanelMiniBuffer {
+				// Focused, go fullscreen
+				m.fullscreen = PanelMiniBuffer
+				m = m.updateSizes()
+				return m, nil
+			}
+			// Not focused, just focus it
+			m = m.setFocus(PanelMiniBuffer)
 			return m, nil
 
 		case key.Matches(msg, m.keys.LaunchAI):
@@ -621,7 +648,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateSizes updates the size of all child components.
 func (m Model) updateSizes() Model {
-	// Handle fullscreen mode (content only)
+	// Handle fullscreen mode for content panel
 	if m.fullscreen == PanelContent {
 		fullWidth := m.width - 2
 		fullHeight := m.height - 1 - 2 // minus status bar and borders
@@ -632,6 +659,20 @@ func (m Model) updateSizes() Model {
 			fullHeight = 0
 		}
 		m.content = m.content.SetSize(fullWidth, fullHeight)
+		return m
+	}
+
+	// Handle fullscreen mode for mini buffer
+	if m.fullscreen == PanelMiniBuffer {
+		fullWidth := m.width - 2
+		fullHeight := m.height - 1 - 2 // minus status bar and borders
+		if fullWidth < 0 {
+			fullWidth = 0
+		}
+		if fullHeight < 0 {
+			fullHeight = 0
+		}
+		m.miniBuffer = m.miniBuffer.SetSize(fullWidth, fullHeight)
 		return m
 	}
 
@@ -696,7 +737,7 @@ func (m Model) View() tea.View {
 
 	var view string
 
-	// Handle fullscreen mode (content only)
+	// Handle fullscreen mode for content panel
 	if m.fullscreen == PanelContent {
 		statusBar := m.renderStatusBar()
 		title, scrollPercent := m.content.TitleInfo()
@@ -712,6 +753,24 @@ func (m Model) View() tea.View {
 
 		panel := theme.RenderPanelWithTitle(
 			m.content.ContentView(),
+			opts,
+			m.width,
+			m.height-1,
+			true,
+		)
+		view = lipgloss.JoinVertical(lipgloss.Left, panel, statusBar)
+	} else if m.fullscreen == PanelMiniBuffer {
+		// Handle fullscreen mode for mini buffer
+		statusBar := m.renderStatusBar()
+		opts := theme.PanelTitleOptions{
+			Title:         "TERMINAL",
+			StatusRunning: m.miniBuffer.Running(),
+			ShowStatus:    true,
+			ScrollPercent: m.miniBuffer.ScrollPercent(),
+		}
+
+		panel := theme.RenderPanelWithTitle(
+			m.miniBuffer.View(),
 			opts,
 			m.width,
 			m.height-1,
@@ -882,7 +941,7 @@ func (m Model) renderMiniBuffer() string {
 		Title:         "TERMINAL",
 		StatusRunning: m.miniBuffer.Running(),
 		ShowStatus:    true,
-		ScrollPercent: -1, // Don't show scroll for terminal
+		ScrollPercent: m.miniBuffer.ScrollPercent(),
 	}
 
 	return theme.RenderPanelWithTitle(
@@ -1056,7 +1115,7 @@ func (m Model) renderHelpOverlay(_ string) string {
 		"║  PANELS                                                  ║",
 		"║    Alt+1         Focus file tree                         ║",
 		"║    Alt+2         Focus content (2x = fullscreen)         ║",
-		"║    Alt+3         Toggle terminal                         ║",
+		"║    Alt+3         Focus terminal (2x = fullscreen)        ║",
 		"║                                                          ║",
 		"║  VIEWER (when viewing a file)                            ║",
 		"║    /             Search (regex)                          ║",

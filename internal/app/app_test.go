@@ -309,3 +309,68 @@ func TestPanelAtPosition(t *testing.T) {
 		})
 	}
 }
+
+func TestMiniBufferFullscreen(t *testing.T) {
+	t.Run("alt-3 cycle: closed -> open -> fullscreen -> open", func(t *testing.T) {
+		m := New()
+		m.width = 100
+		m.height = 40
+		m.ready = true
+
+		// Initially mini buffer is closed
+		assert.False(t, m.miniVisible)
+		assert.Equal(t, PanelNone, m.fullscreen)
+
+		// First alt-3: open panel
+		newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}, Alt: true})
+		m = newModel.(Model)
+		assert.True(t, m.miniVisible)
+		assert.Equal(t, PanelNone, m.fullscreen)
+		assert.Equal(t, PanelMiniBuffer, m.focus)
+
+		// Second alt-3: go fullscreen (already focused)
+		newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}, Alt: true})
+		m = newModel.(Model)
+		assert.True(t, m.miniVisible)
+		assert.Equal(t, PanelMiniBuffer, m.fullscreen)
+
+		// Third alt-3: exit fullscreen back to panel
+		newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}, Alt: true})
+		m = newModel.(Model)
+		assert.True(t, m.miniVisible) // Still open
+		assert.Equal(t, PanelNone, m.fullscreen)
+	})
+
+	t.Run("alt-2 while alt-3 fullscreen switches to content fullscreen", func(t *testing.T) {
+		m := New()
+		m.width = 100
+		m.height = 40
+		m.ready = true
+		m.miniVisible = true
+		m.fullscreen = PanelMiniBuffer
+		m.focus = PanelMiniBuffer
+		m = m.updateSizes()
+
+		// Press alt-2 to switch to content fullscreen
+		newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}, Alt: true})
+		m = newModel.(Model)
+
+		assert.Equal(t, PanelContent, m.fullscreen)
+		assert.Equal(t, PanelContent, m.focus)
+	})
+
+	t.Run("mini buffer fullscreen renders correctly", func(t *testing.T) {
+		m := New()
+		m.width = 100
+		m.height = 40
+		m.ready = true
+		m.miniVisible = true
+		m.fullscreen = PanelMiniBuffer
+		m = m.updateSizes()
+
+		view := m.View()
+
+		// Should show TERMINAL title
+		assert.Contains(t, view, "TERMINAL")
+	})
+}
