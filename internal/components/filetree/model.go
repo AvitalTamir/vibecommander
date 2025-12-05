@@ -800,6 +800,17 @@ func (m *Model) SetShowHidden(show bool) {
 	m.rebuildVisible()
 }
 
+// SetCompactIndent sets whether to use compact (2-space) indentation.
+func (m *Model) SetCompactIndent(compact bool) {
+	m.compactIndent = compact
+	m.MarkDirty()
+}
+
+// CompactIndent returns whether compact indentation is enabled.
+func (m Model) CompactIndent() bool {
+	return m.compactIndent
+}
+
 // RefreshDir triggers a reload of the specified directory.
 // If the path is a file, it refreshes the parent directory.
 func (m Model) RefreshDir(path string) tea.Cmd {

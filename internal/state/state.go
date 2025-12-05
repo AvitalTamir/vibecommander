@@ -18,6 +18,10 @@ type State struct {
 	AIWindowOpen bool `json:"ai_window_open"`
 	// ThemeIndex is the index of the selected theme
 	ThemeIndex int `json:"theme_index"`
+	// LeftPanelPercent is the width percentage of the file tree panel (15-60)
+	LeftPanelPercent int `json:"left_panel_percent,omitempty"`
+	// CompactIndent indicates if the file tree uses compact (2-space) indentation
+	CompactIndent bool `json:"compact_indent,omitempty"`
 }
 
 // DefaultState returns the default state for first run.

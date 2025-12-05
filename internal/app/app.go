@@ -107,13 +107,22 @@ func New() Model {
 	// Apply saved theme
 	theme.SetThemeIndex(savedState.ThemeIndex)
 
+	// Apply saved left panel percent (validate it's within bounds)
+	leftPanelPercent := savedState.LeftPanelPercent
+	if leftPanelPercent < layout.MinLeftPanelPercent || leftPanelPercent > layout.MaxLeftPanelPercent {
+		leftPanelPercent = layout.DefaultLeftPanelPercent
+	}
+
+	// Apply saved compact indent to file tree
+	ft.SetCompactIndent(savedState.CompactIndent)
+
 	return Model{
 		fileTree:           ft,
 		content:            contentPane,
 		miniBuffer:         minibuffer.New(),
 		focus:              PanelFileTree,
 		miniVisible:        false,
-		leftPanelPercent:   layout.DefaultLeftPanelPercent,
+		leftPanelPercent:   leftPanelPercent,
 		theme:              theme.DefaultTheme(),
 		keys:               DefaultKeyMap(),
 		gitProvider:        gitProvider,
@@ -1203,8 +1212,10 @@ func (m Model) renderQuitDialog(_ string) string {
 // saveState persists the current application state globally.
 func (m Model) saveState() {
 	s := state.State{
-		AIWindowOpen: m.aiLaunched,
-		ThemeIndex:   theme.CurrentThemeIndex(),
+		AIWindowOpen:     m.aiLaunched,
+		ThemeIndex:       theme.CurrentThemeIndex(),
+		LeftPanelPercent: m.leftPanelPercent,
+		CompactIndent:    m.fileTree.CompactIndent(),
 	}
 	// Ignore errors - state persistence is best-effort
 	_ = state.Save(s)
