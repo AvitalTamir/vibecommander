@@ -1,9 +1,3 @@
-# Vibe Commander
-
-### IVE - Integrated Vibe Environment
-
-> Your AI pair programming command center. One screen. Zero context switching. Pure vibes.
-
 <p align="center">
   <img src="https://img.shields.io/badge/built%20with-go-00ADD8?style=flat-square" alt="Built with Go">
   <img src="https://img.shields.io/badge/vibes-immaculate-ff69b4?style=flat-square" alt="Vibes: Immaculate">
@@ -12,27 +6,25 @@
 
 <img width="1712" height="1115" alt="Xnapper-2025-12-03-21 57 15" src="https://github.com/user-attachments/assets/03605818-ce17-4ddb-b013-ce5ad4019d0e" />
 
+# Vibe Commander
+
+## What?
+
+Vibe Commander is an IVE (Interactive Vibe Environment!). It wraps around your AI Assistant CLI so you can spend your entire session in the same terminal tab.
+
 ## Why?
 
 Have been building this as a tool to bring my flow from 99% there to 100%.
 
 I nowadays do pretty much everything using Claude Code and only ever hop into other terminal tabs to view the occasional file or run some git commands.
 
-Vision was to have these minimal facilities in a familiar IDE style layout (Integrated Vibe Environment?) that evokes old time Norton Commander memories.
+Vision was to have these minimal facilities in a familiar IDE style layout that evokes old time Norton Commander memories.
 
 ## Quick Start
 
 ### Download Binary
 
 Grab the latest binary for your platform from the [Releases page](https://github.com/avitaltamir/vibecommander/releases/latest).
-
-Available binaries:
-- `vc-darwin-arm64` - macOS Apple Silicon
-- `vc-darwin-amd64` - macOS Intel
-- `vc-linux-arm64` - Linux ARM64
-- `vc-linux-amd64` - Linux x86_64
-- `vc-windows-arm64.exe` - Windows ARM64
-- `vc-windows-amd64.exe` - Windows x86_64
 
 ### Install with Go
 
@@ -45,7 +37,6 @@ go install github.com/avitaltamir/vibecommander/cmd/vc@latest
 ```bash
 vc
 
-# Launch with Claude (or your AI of choice)
 # Press Alt+A once IVE is running
 ```
 
