@@ -108,6 +108,6 @@ go build -o vc ./cmd/vc
 
 ---
 
-Built with pure vibes.
+100% Vibes, 0% Human Slop.
 
 MIT License
