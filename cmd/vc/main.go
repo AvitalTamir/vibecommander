@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/avitaltamir/vibecommander/internal/app"
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 var version = "dev"
@@ -19,11 +19,7 @@ func main() {
 		return
 	}
 
-	p := tea.NewProgram(
-		app.New(),
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
+	p := tea.NewProgram(app.New())
 
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

@@ -7,14 +7,22 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/theme"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
 )
+
+// Render throttling interval - render at most once per this duration
+// Using 50ms (~20fps) to reduce flicker from animated spinners while still feeling responsive
+const renderInterval = 50 * time.Millisecond
+
+// renderTickMsg triggers a render update
+type renderTickMsg struct{}
 
 // Messages
 type (
@@ -44,6 +52,12 @@ type Model struct {
 	scrollback    []string // Lines that scrolled off the top
 	scrollOffset  int      // 0 = live view, >0 = scrolled up N lines
 	maxScrollback int      // Max lines to keep
+
+	// Render throttling
+	cachedView      string    // Cached rendered view
+	lastRender      time.Time // Last time we rendered
+	renderScheduled bool      // Whether a render tick is scheduled
+	dirty           bool      // Whether the terminal has new output
 
 	theme *theme.Theme
 	ready bool
@@ -86,11 +100,46 @@ func (m Model) StartShell() tea.Cmd {
 
 type startShellMsg struct{}
 
+// scheduleRenderTick returns a command to schedule a render tick if not already scheduled
+func (m *Model) scheduleRenderTick() tea.Cmd {
+	if m.renderScheduled {
+		return nil
+	}
+	m.renderScheduled = true
+	// Calculate time until next render (ensure we don't render too fast)
+	timeSinceLastRender := time.Since(m.lastRender)
+	delay := renderInterval - timeSinceLastRender
+	if delay < 0 {
+		delay = 0
+	}
+	return tea.Tick(delay, func(time.Time) tea.Msg {
+		return renderTickMsg{}
+	})
+}
+
 // Update handles messages.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case renderTickMsg:
+		// Render tick - update cached view if dirty
+		m.renderScheduled = false
+		if m.dirty {
+			m.dirty = false
+			m.lastRender = time.Now()
+			newView := m.renderVT()
+			// Only update if content actually changed visually
+			if newView != m.cachedView {
+				m.cachedView = newView
+			}
+		}
+		// If still running, schedule another tick to catch any missed updates
+		if m.running && !m.renderScheduled {
+			return m, m.scheduleRenderTick()
+		}
+		return m, nil
+
 	case startShellMsg:
 		if m.running {
 			return m, nil
@@ -99,6 +148,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case OutputMsg:
 		m.mu.Lock()
+		// Snap to live view on new output
+		m.scrollOffset = 0
+
 		if m.vt != nil {
 			cols, rows := m.vt.Size()
 
@@ -149,11 +201,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.scrollback = m.scrollback[len(m.scrollback)-m.maxScrollback:]
 			}
 		}
+		m.dirty = true
 		m.mu.Unlock()
 
-		// Continue reading
+		// Schedule a render tick and continue reading
 		if m.running && m.pty != nil {
 			cmds = append(cmds, m.readOutput())
+		}
+		if cmd := m.scheduleRenderTick(); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
 		return m, tea.Batch(cmds...)
 
@@ -170,10 +226,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// Restart shell
 		return m, m.StartShell()
 
-	case tea.MouseMsg:
+	case tea.MouseWheelMsg:
 		// Handle mouse scroll for scrollback buffer
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
+		mouse := msg.Mouse()
+		switch mouse.Button {
+		case tea.MouseWheelUp:
 			// Scroll up (into history)
 			maxScroll := len(m.scrollback)
 			m.scrollOffset += 3
@@ -181,7 +238,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.scrollOffset = maxScroll
 			}
 			return m, nil
-		case tea.MouseButtonWheelDown:
+		case tea.MouseWheelDown:
 			// Scroll down (toward live)
 			m.scrollOffset -= 3
 			if m.scrollOffset < 0 {
@@ -191,7 +248,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if !m.Focused() {
 			return m, nil
 		}
@@ -199,98 +256,66 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// Send input to PTY if running
 		if m.running && m.pty != nil {
 			var input []byte
+			key := msg.Key()
+			hasAlt := key.Mod&tea.ModAlt != 0
+			hasCtrl := key.Mod&tea.ModCtrl != 0
 
-			switch msg.Type {
-			case tea.KeyEnter:
-				input = []byte("\r")
-			case tea.KeyBackspace:
-				if msg.Alt {
-					input = []byte{27, 127} // ESC + DEL for Alt+Backspace (delete word)
-				} else {
-					input = []byte{127}
-				}
-			case tea.KeyTab:
-				input = []byte("\t")
-			case tea.KeySpace:
-				input = []byte(" ")
-			case tea.KeyCtrlA:
-				input = []byte{1}
-			case tea.KeyCtrlB:
-				input = []byte{2}
-			case tea.KeyCtrlC:
-				input = []byte{3}
-			case tea.KeyCtrlD:
-				input = []byte{4}
-			case tea.KeyCtrlE:
-				input = []byte{5}
-			case tea.KeyCtrlF:
-				input = []byte{6}
-			case tea.KeyCtrlG:
-				input = []byte{7}
-			case tea.KeyCtrlJ:
-				input = []byte{10}
-			case tea.KeyCtrlK:
-				input = []byte{11}
-			case tea.KeyCtrlL:
-				input = []byte{12}
-			case tea.KeyCtrlN:
-				input = []byte{14}
-			case tea.KeyCtrlO:
-				input = []byte{15}
-			case tea.KeyCtrlP:
-				input = []byte{16}
-			case tea.KeyCtrlR:
-				input = []byte{18}
-			case tea.KeyCtrlS:
-				input = []byte{19}
-			case tea.KeyCtrlT:
-				input = []byte{20}
-			case tea.KeyCtrlU:
-				input = []byte{21}
-			case tea.KeyCtrlV:
-				input = []byte{22}
-			case tea.KeyCtrlW:
-				input = []byte{23}
-			case tea.KeyCtrlX:
-				input = []byte{24}
-			case tea.KeyCtrlY:
-				input = []byte{25}
-			case tea.KeyCtrlZ:
-				input = []byte{26}
-			case tea.KeyUp:
-				input = []byte("\x1b[A")
-			case tea.KeyDown:
-				input = []byte("\x1b[B")
-			case tea.KeyRight:
-				input = []byte("\x1b[C")
-			case tea.KeyLeft:
-				input = []byte("\x1b[D")
-			case tea.KeyEscape:
-				input = []byte{27}
-			case tea.KeyRunes:
-				// Filter out mouse/escape sequence fragments
-				runeStr := string(msg.Runes)
-				if looksLikeMouseSequence(runeStr) || looksLikeEscapeFragment(runeStr) {
-					return m, nil
-				}
-				if msg.Alt {
-					for _, r := range msg.Runes {
-						input = append(input, 27)
-						input = append(input, byte(r))
+			// Handle Ctrl key combinations
+			if hasCtrl && key.Code >= 'a' && key.Code <= 'z' {
+				// Ctrl+A=1 through Ctrl+Z=26
+				input = []byte{byte(key.Code - 'a' + 1)}
+			} else {
+				// Handle special keys and regular input
+				switch key.Code {
+				case tea.KeyEnter:
+					input = []byte("\r")
+				case tea.KeyBackspace:
+					if hasAlt {
+						input = []byte{27, 127} // ESC + DEL for Alt+Backspace (delete word)
+					} else {
+						input = []byte{127}
 					}
-				} else {
-					input = []byte(runeStr)
+				case tea.KeyTab:
+					input = []byte("\t")
+				case tea.KeySpace:
+					input = []byte(" ")
+				case tea.KeyUp:
+					input = []byte("\x1b[A")
+				case tea.KeyDown:
+					input = []byte("\x1b[B")
+				case tea.KeyRight:
+					input = []byte("\x1b[C")
+				case tea.KeyLeft:
+					input = []byte("\x1b[D")
+				case tea.KeyEscape:
+					input = []byte{27}
+				case tea.KeyHome:
+					input = []byte("\x1b[H")
+				case tea.KeyEnd:
+					input = []byte("\x1b[F")
+				case tea.KeyPgUp:
+					input = []byte("\x1b[5~")
+				case tea.KeyPgDown:
+					input = []byte("\x1b[6~")
+				case tea.KeyDelete:
+					input = []byte("\x1b[3~")
+				default:
+					// Regular character input
+					if key.Text != "" {
+						// Filter out mouse/escape sequence fragments
+						if looksLikeMouseSequence(key.Text) || looksLikeEscapeFragment(key.Text) {
+							return m, nil
+						}
+						if hasAlt {
+							for _, r := range key.Text {
+								input = append(input, 27)
+								input = append(input, byte(r))
+							}
+						} else {
+							input = []byte(key.Text)
+						}
+					}
 				}
-			case tea.KeyHome:
-				input = []byte("\x1b[H")
-			case tea.KeyEnd:
-				input = []byte("\x1b[F")
-			case tea.KeyPgUp:
-				input = []byte("\x1b[5~")
-			case tea.KeyPgDown:
-				input = []byte("\x1b[6~")
-			case tea.KeyDelete:
-				input = []byte("\x1b[3~")
 			}
 
 			if len(input) > 0 {
@@ -375,8 +400,11 @@ func (m Model) View() string {
 			Render("Initializing shell...")
 	}
 
-	// Render the virtual terminal screen
+	// Return cached view if available, otherwise render fresh
 	if m.vt != nil {
+		if m.cachedView != "" {
+			return m.cachedView
+		}
 		return m.renderVT()
 	}
 
@@ -685,6 +713,13 @@ func (m Model) SetSize(width, height int) Model {
 	if !m.ready {
 		m.ready = true
 	}
+
+	// Reset scroll offset on resize to show live view
+	m.scrollOffset = 0
+
+	// Invalidate cached view on resize
+	m.cachedView = ""
+	m.dirty = true
 
 	// Resize virtual terminal if it exists
 	if m.vt != nil && width > 0 && height > 0 {

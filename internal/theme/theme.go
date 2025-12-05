@@ -1,6 +1,6 @@
 package theme
 
-import "github.com/charmbracelet/lipgloss"
+import "image/color"
 
 // Theme holds all visual configuration for the application.
 type Theme struct {
@@ -17,25 +17,25 @@ type Theme struct {
 // ColorPalette holds all color definitions.
 type ColorPalette struct {
 	// Accent colors
-	Primary   lipgloss.Color
-	Secondary lipgloss.Color
-	Focus     lipgloss.Color
-	Success   lipgloss.Color
-	Error     lipgloss.Color
-	Warning   lipgloss.Color
-	AI        lipgloss.Color
+	Primary   color.Color
+	Secondary color.Color
+	Focus     color.Color
+	Success   color.Color
+	Error     color.Color
+	Warning   color.Color
+	AI        color.Color
 
 	// Background colors
-	BgPrimary     lipgloss.Color
-	BgPanel       lipgloss.Color
-	BgPanelActive lipgloss.Color
-	BgMiniBuffer  lipgloss.Color
+	BgPrimary     color.Color
+	BgPanel       color.Color
+	BgPanelActive color.Color
+	BgMiniBuffer  color.Color
 
 	// Text colors
-	TextPrimary   lipgloss.Color
-	TextSecondary lipgloss.Color
-	TextMuted     lipgloss.Color
-	TextDim       lipgloss.Color
+	TextPrimary   color.Color
+	TextSecondary color.Color
+	TextMuted     color.Color
+	TextDim       color.Color
 }
 
 // DefaultTheme returns the default cyberpunk theme.

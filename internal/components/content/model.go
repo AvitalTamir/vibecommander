@@ -12,8 +12,8 @@ import (
 	"github.com/avitaltamir/vibecommander/internal/components/terminal"
 	"github.com/avitaltamir/vibecommander/internal/git"
 	"github.com/avitaltamir/vibecommander/internal/theme"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Mode determines what the content pane displays.
@@ -74,6 +74,7 @@ type Model struct {
 	components.Base
 
 	mode     Mode
+	lastMode Mode // Track previous mode for lazy size updates
 	viewer   viewer.Model
 	terminal terminal.Model
 	diff     diff.Model
@@ -82,6 +83,10 @@ type Model struct {
 	aiCommand   string // Stores the AI command name (e.g., "claude", "aider")
 	gitProvider git.Provider
 	theme       *theme.Theme
+
+	// Cached dimensions for lazy sizing of inactive components
+	lastWidth         int
+	lastContentHeight int
 }
 
 // New creates a new content pane model.
@@ -100,6 +105,21 @@ func (m *Model) SetGitProvider(provider git.Provider) {
 	m.gitProvider = provider
 }
 
+// ensureActiveComponentSized ensures the currently active component has correct dimensions
+func (m *Model) ensureActiveComponentSized() {
+	if m.lastWidth == 0 || m.lastContentHeight == 0 {
+		return
+	}
+	switch m.mode {
+	case ModeViewer:
+		m.viewer = m.viewer.SetSize(m.lastWidth, m.lastContentHeight)
+	case ModeDiff:
+		m.diff = m.diff.SetSize(m.lastWidth, m.lastContentHeight)
+	case ModeTerminal, ModeAI:
+		m.terminal = m.terminal.SetSize(m.lastWidth, m.lastContentHeight)
+	}
+}
+
 // Init initializes the content pane.
 func (m Model) Init() tea.Cmd {
 	return m.viewer.Init()
@@ -111,7 +131,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case SetModeMsg:
-		m.mode = msg.Mode
+		if m.mode != msg.Mode {
+			m.lastMode = m.mode
+			m.mode = msg.Mode
+			// Ensure the newly active component has correct size
+			m.ensureActiveComponentSized()
+		}
 		return m, nil
 
 	case OpenFileMsg:
@@ -120,11 +145,19 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if m.gitProvider != nil {
 			return m, m.loadFileWithDiffCheck(msg.Path)
 		}
-		m.mode = ModeViewer
+		if m.mode != ModeViewer {
+			m.lastMode = m.mode
+			m.mode = ModeViewer
+			m.ensureActiveComponentSized()
+		}
 		return m, viewer.LoadFile(msg.Path)
 
 	case LaunchAIMsg:
-		m.mode = ModeAI
+		if m.mode != ModeAI {
+			m.lastMode = m.mode
+			m.mode = ModeAI
+			m.ensureActiveComponentSized()
+		}
 		m.aiCommand = msg.Command // Store the AI command name
 		// Focus the terminal since we're switching to AI mode
 		m.terminal = m.terminal.Focus()
@@ -154,7 +187,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case FileWithDiffMsg:
 		if msg.Err != nil {
 			// Error loading - show in viewer
-			m.mode = ModeViewer
+			if m.mode != ModeViewer {
+				m.lastMode = m.mode
+				m.mode = ModeViewer
+				m.ensureActiveComponentSized()
+			}
 			var cmd tea.Cmd
 			m.viewer, cmd = m.viewer.Update(viewer.FileLoadedMsg{
 				Path: msg.Path,
@@ -164,12 +201,20 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		if msg.HasDiff && msg.Diff != "" {
 			// Show diff view
-			m.mode = ModeDiff
+			if m.mode != ModeDiff {
+				m.lastMode = m.mode
+				m.mode = ModeDiff
+				m.ensureActiveComponentSized()
+			}
 			m.diff.SetContent(msg.Diff, msg.Path)
 			return m, nil
 		}
 		// No diff - show normal viewer
-		m.mode = ModeViewer
+		if m.mode != ModeViewer {
+			m.lastMode = m.mode
+			m.mode = ModeViewer
+			m.ensureActiveComponentSized()
+		}
 		var cmd tea.Cmd
 		m.viewer, cmd = m.viewer.Update(viewer.FileLoadedMsg{
 			Path:    msg.Path,
@@ -188,8 +233,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
-	case tea.MouseMsg:
-		// Always pass mouse events to active component for scrolling
+	case tea.MouseWheelMsg:
+		// Always pass mouse wheel events to active component for scrolling
 		return m.routeMessage(msg)
 	}
 
@@ -324,9 +369,26 @@ func (m Model) SetSize(width, height int) Model {
 		contentHeight = 0
 	}
 
-	m.viewer = m.viewer.SetSize(width, contentHeight)
-	m.terminal = m.terminal.SetSize(width, contentHeight)
-	m.diff = m.diff.SetSize(width, contentHeight)
+	// On first call (lastWidth == 0), size all components so they're ready
+	// After that, only update the active component's size immediately
+	if m.lastWidth == 0 {
+		m.viewer = m.viewer.SetSize(width, contentHeight)
+		m.terminal = m.terminal.SetSize(width, contentHeight)
+		m.diff = m.diff.SetSize(width, contentHeight)
+	} else {
+		switch m.mode {
+		case ModeViewer:
+			m.viewer = m.viewer.SetSize(width, contentHeight)
+		case ModeDiff:
+			m.diff = m.diff.SetSize(width, contentHeight)
+		case ModeTerminal, ModeAI:
+			m.terminal = m.terminal.SetSize(width, contentHeight)
+		}
+	}
+
+	// Store dimensions for lazy sizing of inactive components
+	m.lastWidth = width
+	m.lastContentHeight = contentHeight
 
 	return m
 }

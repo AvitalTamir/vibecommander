@@ -5,7 +5,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/avitaltamir/vibecommander/internal/theme"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // Position represents a character position in the text.

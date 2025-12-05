@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -79,7 +79,7 @@ func TestModelUpdate(t *testing.T) {
 		m = m.SetSize(30, 40)
 		// Not focused
 
-		msg := tea.KeyMsg{Type: tea.KeyDown}
+		msg := tea.KeyPressMsg{Code: tea.KeyDown}
 		newM, _ := m.Update(msg)
 
 		// Model should be unchanged
@@ -105,12 +105,12 @@ func TestModelUpdate(t *testing.T) {
 		assert.Equal(t, 0, m.cursor)
 
 		// Move down
-		downMsg := tea.KeyMsg{Type: tea.KeyDown}
+		downMsg := tea.KeyPressMsg{Code: tea.KeyDown}
 		m, _ = m.Update(downMsg)
 		assert.Equal(t, 1, m.cursor)
 
 		// Move up
-		upMsg := tea.KeyMsg{Type: tea.KeyUp}
+		upMsg := tea.KeyPressMsg{Code: tea.KeyUp}
 		m, _ = m.Update(upMsg)
 		assert.Equal(t, 0, m.cursor)
 	})
@@ -180,7 +180,7 @@ func TestModelSelectMsg(t *testing.T) {
 	// Move to the file and select it
 	m.cursor = 1 // Skip root
 
-	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	enterMsg := tea.KeyPressMsg{Code: tea.KeyEnter}
 	_, cmd := m.Update(enterMsg)
 
 	// Should return a command that produces SelectMsg
@@ -217,7 +217,7 @@ func TestModelDirectoryToggle(t *testing.T) {
 	m.cursor = 1
 
 	// Use Enter key to expand directory (more reliable than space key)
-	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	enterMsg := tea.KeyPressMsg{Code: tea.KeyEnter}
 	m, cmd := m.Update(enterMsg)
 
 	// Directory should be expanded (and trigger load since not loaded)
@@ -241,14 +241,14 @@ func TestModelMouseHandling(t *testing.T) {
 
 	t.Run("handles wheel up", func(t *testing.T) {
 		m.cursor = 2
-		msg := tea.MouseMsg{Button: tea.MouseButtonWheelUp}
+		msg := tea.MouseWheelMsg{Button: tea.MouseWheelUp}
 		m, _ = m.Update(msg)
 		assert.Less(t, m.cursor, 2)
 	})
 
 	t.Run("handles wheel down", func(t *testing.T) {
 		m.cursor = 0
-		msg := tea.MouseMsg{Button: tea.MouseButtonWheelDown}
+		msg := tea.MouseWheelMsg{Button: tea.MouseWheelDown}
 		m, _ = m.Update(msg)
 		assert.Greater(t, m.cursor, 0)
 	})
