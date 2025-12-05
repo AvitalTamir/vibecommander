@@ -51,7 +51,8 @@ type Model struct {
 	miniVisible bool
 	fullscreen  PanelID // Which panel is fullscreen (PanelNone = none)
 	showHelp    bool
-	showQuit    bool // Quit confirmation dialog
+	showQuit    bool      // Quit confirmation dialog
+	lastQuitPress time.Time // For double-tap ctrl+q detection
 
 	// Layout
 	layout layout.Layout
@@ -329,11 +330,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle quit dialog first
 		if m.showQuit {
 			switch msg.String() {
-			case "y", "Y", "enter":
+			case "y", "Y", "enter", "ctrl+q":
 				// Save state before quitting
 				m.saveState()
 				return m, tea.Quit
-			case "n", "N", "esc", "q":
+			case "n", "N", "esc":
 				m.showQuit = false
 				return m, nil
 			}
@@ -343,6 +344,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle global keys
 		switch {
 		case key.Matches(msg, m.keys.Quit):
+			// Check for double-tap ctrl+q (within 400ms) for immediate quit
+			now := time.Now()
+			if now.Sub(m.lastQuitPress) < 400*time.Millisecond {
+				m.saveState()
+				return m, tea.Quit
+			}
+			m.lastQuitPress = now
 			m.showQuit = true
 			return m, nil
 
@@ -1002,7 +1010,7 @@ func (m Model) renderQuitDialog(_ string) string {
 		"║                                    ║",
 		"║    Are you sure you want to quit?  ║",
 		"║                                    ║",
-		"║       [Y]es          [N]o          ║",
+		"║     [Y]es    [N]o    [^Q]uit       ║",
 		"║                                    ║",
 		"╚════════════════════════════════════╝",
 	}

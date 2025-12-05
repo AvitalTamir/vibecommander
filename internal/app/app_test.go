@@ -86,6 +86,37 @@ func TestModelUpdate(t *testing.T) {
 		assert.False(t, model.showQuit)
 	})
 
+	t.Run("Quit dialog ctrl+q confirms quit", func(t *testing.T) {
+		m := New()
+		m.width = 100
+		m.height = 40
+		m.ready = true
+		m.showQuit = true
+
+		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlQ})
+
+		// cmd should be tea.Quit
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("Double-tap ctrl+q quits immediately", func(t *testing.T) {
+		m := New()
+		m.width = 100
+		m.height = 40
+		m.ready = true
+
+		// First ctrl+q shows dialog
+		newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlQ})
+		model := newModel.(Model)
+		assert.True(t, model.showQuit)
+
+		// Simulate immediate second ctrl+q (dialog handles it)
+		_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlQ})
+
+		// Should quit
+		assert.NotNil(t, cmd)
+	})
+
 	t.Run("ToggleMiniBufferMsg toggles visibility", func(t *testing.T) {
 		m := New()
 		m.width = 100
