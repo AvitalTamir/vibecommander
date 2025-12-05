@@ -264,6 +264,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if hasCtrl && key.Code >= 'a' && key.Code <= 'z' {
 				// Ctrl+A=1 through Ctrl+Z=26
 				input = []byte{byte(key.Code - 'a' + 1)}
+			} else if hasAlt && key.Code >= 'a' && key.Code <= 'z' {
+				// Alt+letter sends ESC + letter (e.g., Alt+B for backward-word)
+				input = []byte{27, byte(key.Code)}
 			} else {
 				// Handle special keys and regular input
 				switch key.Code {

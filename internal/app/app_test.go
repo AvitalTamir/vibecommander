@@ -93,7 +93,7 @@ func TestModelUpdate(t *testing.T) {
 		m.ready = true
 		m.showQuit = true
 
-		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlQ})
+		_, cmd := m.Update(tea.KeyPressMsg{Code: 'q', Mod: tea.ModCtrl})
 
 		// cmd should be tea.Quit
 		assert.NotNil(t, cmd)
@@ -106,12 +106,12 @@ func TestModelUpdate(t *testing.T) {
 		m.ready = true
 
 		// First ctrl+q shows dialog
-		newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlQ})
+		newModel, _ := m.Update(tea.KeyPressMsg{Code: 'q', Mod: tea.ModCtrl})
 		model := newModel.(Model)
 		assert.True(t, model.showQuit)
 
 		// Simulate immediate second ctrl+q (dialog handles it)
-		_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlQ})
+		_, cmd := model.Update(tea.KeyPressMsg{Code: 'q', Mod: tea.ModCtrl})
 
 		// Should quit
 		assert.NotNil(t, cmd)
