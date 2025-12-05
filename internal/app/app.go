@@ -516,6 +516,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle mouse clicks to focus panes and interact with content
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 			targetPanel := m.panelAtPosition(msg.X, msg.Y)
+
+			// Check for header click on content panel to switch sources
+			if targetPanel == PanelContent && m.content.HasMultipleSources() {
+				if source := m.detectHeaderClick(msg.X, msg.Y); source != content.SourceNone {
+					// Switch to the clicked source
+					var cmd tea.Cmd
+					m.content, cmd = m.content.Update(content.SwitchSourceMsg{Source: source})
+					if cmd != nil {
+						cmds = append(cmds, cmd)
+					}
+					// Also focus the content panel if not already focused
+					if m.focus != PanelContent {
+						m = m.setFocus(PanelContent)
+					}
+					return m, tea.Batch(cmds...)
+				}
+			}
+
 			if targetPanel != PanelNone && targetPanel != m.focus {
 				m = m.setFocus(targetPanel)
 			}
@@ -694,8 +712,6 @@ func (m Model) renderLeftPanel() string {
 func (m Model) renderRightPanel() string {
 	focused := m.focus == PanelContent
 
-	title, scrollPercent := m.content.TitleInfo()
-	isRunning := m.content.IsTerminalRunning()
 	mode := m.content.Mode()
 
 	// Determine bottom hints based on mode (only when focused)
@@ -713,13 +729,9 @@ func (m Model) renderRightPanel() string {
 		}
 	}
 
-	opts := theme.PanelTitleOptions{
-		Title:         title,
-		StatusRunning: isRunning,
-		ShowStatus:    mode == content.ModeAI || mode == content.ModeTerminal,
-		ScrollPercent: scrollPercent,
-		BottomHints:   bottomHints,
-	}
+	// Build panel options using sources info for dual-header support
+	sources := m.content.SourcesInfo()
+	opts := m.buildContentPanelOpts(sources, bottomHints)
 
 	return theme.RenderPanelWithTitle(
 		m.content.ContentView(),
@@ -728,6 +740,62 @@ func (m Model) renderRightPanel() string {
 		m.layout.MainHeight,
 		focused,
 	)
+}
+
+// buildContentPanelOpts builds PanelTitleOptions from content sources.
+// This supports the dual-header display with file and AI titles.
+func (m Model) buildContentPanelOpts(sources []content.SourceInfo, bottomHints string) theme.PanelTitleOptions {
+	opts := theme.PanelTitleOptions{
+		BottomHints: bottomHints,
+	}
+
+	if len(sources) == 0 {
+		// No content loaded yet
+		opts.Title = "VIEWER"
+		opts.ScrollPercent = -1
+		return opts
+	}
+
+	// Single source - simple case
+	if len(sources) == 1 {
+		src := sources[0]
+		opts.Title = src.Title
+		opts.ScrollPercent = src.ScrollPercent
+		opts.StatusRunning = src.IsRunning
+		opts.ShowStatus = src.Source == content.SourceAI
+		opts.PrimaryActive = true
+		return opts
+	}
+
+	// Dual sources - file (primary) and AI (secondary)
+	var fileSource, aiSource *content.SourceInfo
+	for i := range sources {
+		if sources[i].Source == content.SourceFile {
+			fileSource = &sources[i]
+		} else if sources[i].Source == content.SourceAI {
+			aiSource = &sources[i]
+		}
+	}
+
+	// File is always primary (left), AI is secondary (right)
+	if fileSource != nil {
+		opts.Title = fileSource.Title
+		opts.PrimaryActive = fileSource.IsActive
+		if fileSource.IsActive {
+			opts.ScrollPercent = fileSource.ScrollPercent
+		} else {
+			opts.ScrollPercent = -1
+		}
+	}
+
+	if aiSource != nil {
+		opts.SecondaryTitle = aiSource.Title
+		opts.SecondaryActive = aiSource.IsActive
+		opts.SecondaryShowStatus = true
+		opts.SecondaryStatusRunning = aiSource.IsRunning
+	}
+
+	return opts
 }
 
 // renderMiniBuffer renders the mini buffer panel.
@@ -992,6 +1060,41 @@ func (m Model) panelAtPosition(x, y int) PanelID {
 	}
 
 	return PanelNone // Status bar or outside panels
+}
+
+// detectHeaderClick checks if a mouse click is on a title in the content panel header.
+// Returns the ContentSource that was clicked, or SourceNone if not on a title.
+func (m Model) detectHeaderClick(x, y int) content.ContentSource {
+	// Only the top border (y == 0 relative to panel) contains clickable titles
+	// Content panel starts at x = LeftWidth
+	panelX := x - m.layout.LeftWidth
+	if panelX < 0 {
+		return content.SourceNone
+	}
+
+	// Only check first row (the header)
+	if y != 0 {
+		return content.SourceNone
+	}
+
+	// Build the same opts we use for rendering to get accurate regions
+	sources := m.content.SourcesInfo()
+	opts := m.buildContentPanelOpts(sources, "")
+
+	// Calculate title regions
+	primary, secondary := theme.CalculateTitleRegions(opts)
+
+	// Check if click is in primary title region (file)
+	if panelX >= primary.StartX && panelX < primary.EndX {
+		return content.SourceFile
+	}
+
+	// Check if click is in secondary title region (AI)
+	if opts.SecondaryTitle != "" && panelX >= secondary.StartX && panelX < secondary.EndX {
+		return content.SourceAI
+	}
+
+	return content.SourceNone
 }
 
 // routeMouseToPanel routes mouse events to the panel at the mouse position.

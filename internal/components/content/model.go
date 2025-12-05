@@ -26,6 +26,26 @@ const (
 	ModeAI
 )
 
+// ContentSource identifies a source of content in the panel.
+// This prepares for future split-panel support while currently
+// only one source is displayed at a time.
+type ContentSource int
+
+const (
+	SourceNone ContentSource = iota
+	SourceFile               // File viewer or diff
+	SourceAI                 // AI terminal
+)
+
+// SourceInfo contains information about a content source for header display.
+type SourceInfo struct {
+	Source        ContentSource
+	Title         string  // Display title (filename or AI command name)
+	ScrollPercent float64 // -1 for terminals
+	IsRunning     bool    // For AI: whether process is running
+	IsActive      bool    // Whether this source is currently displayed
+}
+
 func (m Mode) String() string {
 	switch m {
 	case ModeViewer:
@@ -67,6 +87,12 @@ type (
 		HasDiff bool
 		Err     error
 	}
+
+	// SwitchSourceMsg requests switching to a different content source.
+	// Used when clicking on headers in the dual-header display.
+	SwitchSourceMsg struct {
+		Source ContentSource
+	}
 )
 
 // Model is the content pane component that routes between different views.
@@ -82,6 +108,11 @@ type Model struct {
 	aiCommand   string // Stores the AI command name (e.g., "claude", "aider")
 	gitProvider git.Provider
 	theme       *theme.Theme
+
+	// Track content sources for dual-header display
+	// These allow showing both headers even when only one content is active
+	hasFileContent bool // True if a file has been loaded
+	hasAIContent   bool // True if AI terminal has been started
 }
 
 // New creates a new content pane model.
@@ -114,8 +145,29 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.mode = msg.Mode
 		return m, nil
 
+	case SwitchSourceMsg:
+		// Switch to the requested content source
+		switch msg.Source {
+		case SourceFile:
+			if m.hasFileContent {
+				// Return to file view (viewer or diff mode, depending on last state)
+				// For simplicity, default to viewer mode
+				m.mode = ModeViewer
+				m.viewer = m.viewer.Focus()
+				m.terminal = m.terminal.Blur()
+			}
+		case SourceAI:
+			if m.hasAIContent {
+				m.mode = ModeAI
+				m.terminal = m.terminal.Focus()
+				m.viewer = m.viewer.Blur()
+			}
+		}
+		return m, nil
+
 	case OpenFileMsg:
 		m.currentPath = msg.Path
+		m.hasFileContent = true
 		// Check if file has git changes - if so, show diff
 		if m.gitProvider != nil {
 			return m, m.loadFileWithDiffCheck(msg.Path)
@@ -126,6 +178,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case LaunchAIMsg:
 		m.mode = ModeAI
 		m.aiCommand = msg.Command // Store the AI command name
+		m.hasAIContent = true
 		// Focus the terminal since we're switching to AI mode
 		m.terminal = m.terminal.Focus()
 		// Start the AI command
@@ -448,4 +501,63 @@ func (m Model) TitleInfo() (title string, scrollPercent float64) {
 		scrollPercent = -1
 	}
 	return
+}
+
+// SourcesInfo returns information about all available content sources.
+// This enables the dual-header display showing both file and AI titles.
+// Returns a slice of SourceInfo for sources that have content.
+func (m Model) SourcesInfo() []SourceInfo {
+	var sources []SourceInfo
+
+	// Add file source if content exists
+	if m.hasFileContent {
+		fileInfo := SourceInfo{
+			Source:   SourceFile,
+			IsActive: m.mode == ModeViewer || m.mode == ModeDiff,
+		}
+		if m.currentPath != "" {
+			fileInfo.Title = filepath.Base(m.currentPath)
+		} else {
+			fileInfo.Title = "VIEWER"
+		}
+		if m.mode == ModeViewer {
+			fileInfo.ScrollPercent = m.viewer.ScrollPercent()
+		} else if m.mode == ModeDiff {
+			fileInfo.ScrollPercent = m.diff.ScrollPercent()
+		} else {
+			fileInfo.ScrollPercent = -1
+		}
+		sources = append(sources, fileInfo)
+	}
+
+	// Add AI source if content exists
+	if m.hasAIContent {
+		aiInfo := SourceInfo{
+			Source:        SourceAI,
+			Title:         m.AICommandName(),
+			ScrollPercent: -1,
+			IsRunning:     m.terminal.Running(),
+			IsActive:      m.mode == ModeAI,
+		}
+		sources = append(sources, aiInfo)
+	}
+
+	return sources
+}
+
+// ActiveSource returns the currently active content source.
+func (m Model) ActiveSource() ContentSource {
+	switch m.mode {
+	case ModeViewer, ModeDiff:
+		return SourceFile
+	case ModeAI, ModeTerminal:
+		return SourceAI
+	default:
+		return SourceNone
+	}
+}
+
+// HasMultipleSources returns true if both file and AI content are available.
+func (m Model) HasMultipleSources() bool {
+	return m.hasFileContent && m.hasAIContent
 }

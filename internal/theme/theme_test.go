@@ -179,3 +179,75 @@ func TestSetThemeIndex(t *testing.T) {
 		assert.Equal(t, 0, CurrentThemeIndex(), "index should not change")
 	})
 }
+
+func TestCalculateTitleRegions(t *testing.T) {
+	t.Run("single title without status", func(t *testing.T) {
+		opts := PanelTitleOptions{
+			Title:         "file.txt",
+			PrimaryActive: true,
+		}
+
+		primary, secondary := CalculateTitleRegions(opts)
+
+		// Primary should start at position 3 (corner + 2 filler)
+		assert.Equal(t, 3, primary.StartX)
+		// Length: "[ " (2) + "file.txt" (8) + " ]" (2) = 12
+		assert.Equal(t, 3+12, primary.EndX)
+		assert.True(t, primary.IsActive)
+		assert.Equal(t, "file.txt", primary.Title)
+
+		// No secondary
+		assert.Empty(t, secondary.Title)
+	})
+
+	t.Run("single title with status", func(t *testing.T) {
+		opts := PanelTitleOptions{
+			Title:         "Claude",
+			ShowStatus:    true,
+			PrimaryActive: true,
+		}
+
+		primary, _ := CalculateTitleRegions(opts)
+
+		// Length: "[ " (2) + "Claude" (6) + " ]" (2) + " ●" (2) = 12
+		assert.Equal(t, 3, primary.StartX)
+		assert.Equal(t, 3+12, primary.EndX)
+	})
+
+	t.Run("dual titles", func(t *testing.T) {
+		opts := PanelTitleOptions{
+			Title:          "file.txt",
+			PrimaryActive:  true,
+			SecondaryTitle: "Claude",
+			SecondaryActive: false,
+			SecondaryShowStatus: true,
+		}
+
+		primary, secondary := CalculateTitleRegions(opts)
+
+		// Primary: "[ file.txt ]" = 12 chars
+		assert.Equal(t, 3, primary.StartX)
+		assert.Equal(t, 15, primary.EndX) // 3 + 12
+		assert.True(t, primary.IsActive)
+
+		// Secondary starts after primary + 2 space separator
+		// "[ Claude ● ]" = 4 + 6 + 2 = 12 chars
+		assert.Equal(t, 17, secondary.StartX) // 15 + 2
+		assert.Equal(t, 29, secondary.EndX) // 17 + 12
+		assert.False(t, secondary.IsActive)
+	})
+
+	t.Run("primary inactive when secondary active", func(t *testing.T) {
+		opts := PanelTitleOptions{
+			Title:           "file.txt",
+			PrimaryActive:   false,
+			SecondaryTitle:  "Claude",
+			SecondaryActive: true,
+		}
+
+		primary, secondary := CalculateTitleRegions(opts)
+
+		assert.False(t, primary.IsActive)
+		assert.True(t, secondary.IsActive)
+	})
+}
