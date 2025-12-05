@@ -299,6 +299,29 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, m.scheduleRenderTick()
 		}
 
+		// Handle Shift+Up/Down for scrollback navigation
+		// This works in terminals like Warp that capture mouse wheel events
+		hasShift := key.Mod&tea.ModShift != 0
+		if hasShift && key.Code == tea.KeyUp {
+			maxScroll := len(m.scrollback)
+			m.scrollOffset += 3
+			if m.scrollOffset > maxScroll {
+				m.scrollOffset = maxScroll
+			}
+			m.dirty = true
+			m.cachedView = ""
+			return m, m.scheduleRenderTick()
+		}
+		if hasShift && key.Code == tea.KeyDown {
+			m.scrollOffset -= 3
+			if m.scrollOffset < 0 {
+				m.scrollOffset = 0
+			}
+			m.dirty = true
+			m.cachedView = ""
+			return m, m.scheduleRenderTick()
+		}
+
 		// Handle Page Up/Down for faster scrolling when not running or when scrolled
 		if m.scrollOffset > 0 || !m.running {
 			_, h := m.Size()
