@@ -766,7 +766,7 @@ func (m Model) View() tea.View {
 			Title:         "TERMINAL",
 			StatusRunning: m.miniBuffer.Running(),
 			ShowStatus:    true,
-			ScrollPercent: m.miniBuffer.ScrollPercent(),
+			ScrollPercent: -1, // Match AI terminal behavior - no scroll indicator
 		}
 
 		panel := theme.RenderPanelWithTitle(
@@ -941,7 +941,7 @@ func (m Model) renderMiniBuffer() string {
 		Title:         "TERMINAL",
 		StatusRunning: m.miniBuffer.Running(),
 		ShowStatus:    true,
-		ScrollPercent: m.miniBuffer.ScrollPercent(),
+		ScrollPercent: -1, // Match AI terminal behavior - no scroll indicator
 	}
 
 	return theme.RenderPanelWithTitle(
