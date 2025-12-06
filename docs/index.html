@@ -654,6 +654,10 @@
 
     /* Responsive */
     @media (max-width: 768px) {
+      body {
+        overflow-x: hidden;
+      }
+
       nav {
         padding: 1rem;
       }
@@ -663,12 +667,62 @@
       }
 
       .hero {
-        padding: 6rem 1.5rem 3rem;
+        min-height: auto;
+        padding: 6rem 1rem 3rem;
+      }
+
+      .hero-content {
+        width: 100%;
+      }
+
+      .hero-title {
+        font-size: 2rem;
+        word-wrap: break-word;
+      }
+
+      .hero-subtitle {
+        font-size: 0.95rem;
+        padding: 0 0.5rem;
+      }
+
+      .hero-cta {
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .btn {
+        width: 100%;
+        max-width: 280px;
+        justify-content: center;
       }
 
       .install-preview {
         flex-direction: column;
         text-align: center;
+        overflow-x: auto;
+        margin: 2rem 0 0;
+      }
+
+      .install-code {
+        font-size: 0.7rem;
+        overflow-x: auto;
+        display: block;
+        white-space: nowrap;
+      }
+
+      .hero-screenshot {
+        margin-top: 2rem;
+      }
+
+      .screenshot-wrapper {
+        border-radius: 8px;
+      }
+
+      .cta-install {
+        overflow-x: auto;
+        white-space: nowrap;
+        font-size: 0.75rem;
       }
 
       .features, .comparison, .keybindings, .cta {
