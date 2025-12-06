@@ -11,6 +11,7 @@ import (
 	"github.com/avitaltamir/vibecommander/internal/components/content"
 	"github.com/avitaltamir/vibecommander/internal/components/content/viewer"
 	"github.com/avitaltamir/vibecommander/internal/components/filetree"
+	"github.com/avitaltamir/vibecommander/internal/components/gitpanel"
 	"github.com/avitaltamir/vibecommander/internal/components/minibuffer"
 	"github.com/avitaltamir/vibecommander/internal/components/terminal"
 	"github.com/avitaltamir/vibecommander/internal/git"
@@ -18,6 +19,7 @@ import (
 	"github.com/avitaltamir/vibecommander/internal/state"
 	"github.com/avitaltamir/vibecommander/internal/theme"
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/fsnotify/fsnotify"
@@ -38,19 +40,26 @@ type FileChangeMsg struct {
 	Op   fsnotify.Op
 }
 
+// gitCommitFinishedMsg is sent when git commit completes (after GPG, etc.)
+type gitCommitFinishedMsg struct {
+	err error
+}
+
 // Model is the root application model.
 type Model struct {
 	// Child components
 	fileTree   filetree.Model
+	gitPanel   gitpanel.Model
 	content    content.Model
 	miniBuffer minibuffer.Model
 	// statusBar  statusbar.Model
 
 	// Focus state
-	focus       PanelID
-	prevFocus   PanelID
-	miniVisible bool
-	fullscreen  PanelID // Which panel is fullscreen (PanelNone = none)
+	focus           PanelID
+	prevFocus       PanelID
+	miniVisible     bool
+	gitPanelVisible bool
+	fullscreen      PanelID // Which panel is fullscreen (PanelNone = none)
 	showHelp    bool
 	showQuit    bool      // Quit confirmation dialog
 	lastQuitPress time.Time // For double-tap ctrl+q detection
@@ -92,6 +101,10 @@ type Model struct {
 	aiDialogIndex    int      // Current selection in dialog (0=Claude, 1=Gemini, 2=Codex, 3=Other)
 	aiDialogCustom   string   // Custom command input when "Other" selected
 	aiDialogEditing  bool     // True when editing custom command in "Other"
+
+	// Commit dialog
+	showCommitDialog bool            // Whether commit dialog is visible
+	commitInput      textinput.Model // Commit message text input
 }
 
 // New creates a new application model.
@@ -125,12 +138,20 @@ func New() Model {
 	// Apply saved compact indent to file tree
 	ft.SetCompactIndent(savedState.CompactIndent)
 
+	// Initialize commit message input
+	commitInput := textinput.New()
+	commitInput.Placeholder = ""
+	commitInput.CharLimit = 200
+	commitInput.Prompt = ""
+
 	return Model{
 		fileTree:           ft,
+		gitPanel:           gitpanel.New(),
 		content:            contentPane,
 		miniBuffer:         minibuffer.New(),
 		focus:              PanelFileTree,
 		miniVisible:        false,
+		gitPanelVisible:    false,
 		leftPanelPercent:   leftPanelPercent,
 		theme:              theme.DefaultTheme(),
 		keys:               DefaultKeyMap(),
@@ -143,6 +164,7 @@ func New() Model {
 		initialThemeIdx:    savedState.ThemeIndex,
 		aiCommand:          savedState.AICommand,
 		aiArgs:             savedState.AIArgs,
+		commitInput:        commitInput,
 	}
 }
 
@@ -268,6 +290,7 @@ func (m *Model) refreshGitStatusDebounced() tea.Cmd {
 }
 
 type gitTickMsg struct{}
+type gitRefreshMsg struct{} // Immediate git refresh request
 
 // gitTick returns a command that sends a gitTickMsg after the tick interval
 func gitTick() tea.Cmd {
@@ -298,7 +321,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.layout = layout.Calculate(msg.Width, msg.Height, m.miniVisible, m.leftPanelPercent)
+		m.layout = layout.Calculate(msg.Width, msg.Height, m.miniVisible, m.leftPanelPercent, m.gitPanelVisible)
 		wasReady := m.ready
 		m.ready = true
 		// Update child component sizes
@@ -325,9 +348,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.isGitRepo = msg.IsRepo
 		m.gitStatus = msg.Status
-		// Update file tree with git status
+		// Update file tree and git panel with git status
 		if msg.Status != nil {
 			m.fileTree = m.fileTree.SetGitStatus(msg.Status)
+			m.gitPanel = m.gitPanel.SetGitStatus(msg.Status)
 		}
 		return m, nil
 
@@ -340,6 +364,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Just reschedule, no state change needed
 		return m, nextTick
+
+	case gitRefreshMsg:
+		// Immediate git refresh (after staging/unstaging)
+		return m, m.refreshGitStatus()
+
+	case gitCommitFinishedMsg:
+		// Git commit finished (after GPG passphrase entry, etc.)
+		if msg.err != nil {
+			return m, func() tea.Msg {
+				return ErrorMsg{Err: msg.err}
+			}
+		}
+		// Refresh git status after successful commit
+		return m, m.refreshGitStatus()
 
 	case FileChangeMsg:
 		// Always continue watching for more events
@@ -411,6 +449,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Handle commit dialog
+		if m.showCommitDialog {
+			return m.handleCommitDialog(msg)
+		}
+
 		// Handle AI dialog
 		if m.showAIDialog {
 			return m.handleAIDialog(msg)
@@ -442,7 +485,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Close mini buffer if open
 			if m.miniVisible {
 				m.miniVisible = false
-				m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent)
+				m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent, m.gitPanelVisible)
 				m = m.updateSizes()
 			}
 			m = m.setFocus(PanelFileTree)
@@ -458,7 +501,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Close mini buffer if open
 			if m.miniVisible {
 				m.miniVisible = false
-				m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent)
+				m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent, m.gitPanelVisible)
 				m = m.updateSizes()
 			}
 			// Enter fullscreen if already focused
@@ -477,7 +520,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Always toggle terminal on/off
 			m.miniVisible = !m.miniVisible
-			m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent)
+			m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent, m.gitPanelVisible)
 			m = m.updateSizes()
 			if m.miniVisible {
 				m = m.setFocus(PanelMiniBuffer)
@@ -487,6 +530,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				m = m.setFocus(m.prevFocus)
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.ToggleGitPanel):
+			// Toggle git panel visibility
+			m.gitPanelVisible = !m.gitPanelVisible
+			m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent, m.gitPanelVisible)
+			m = m.updateSizes()
+			if m.gitPanelVisible {
+				// Focus git panel when opened
+				m = m.setFocus(PanelGitPanel)
+			} else {
+				// Return focus to file tree when closed
+				if m.focus == PanelGitPanel {
+					m = m.setFocus(PanelFileTree)
+				}
 			}
 			return m, nil
 
@@ -528,7 +587,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.leftPanelPercent < layout.MinLeftPanelPercent {
 				m.leftPanelPercent = layout.MinLeftPanelPercent
 			}
-			m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent)
+			m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent, m.gitPanelVisible)
 			m = m.updateSizes()
 			return m, nil
 
@@ -538,7 +597,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.leftPanelPercent > layout.MaxLeftPanelPercent {
 				m.leftPanelPercent = layout.MaxLeftPanelPercent
 			}
-			m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent)
+			m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent, m.gitPanelVisible)
 			m = m.updateSizes()
 			return m, nil
 		}
@@ -555,7 +614,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ToggleMiniBufferMsg:
 		m.miniVisible = !m.miniVisible
-		m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent)
+		m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent, m.gitPanelVisible)
 		m = m.updateSizes()
 		return m, nil
 
@@ -567,6 +626,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+
+	case filetree.StageToggleMsg:
+		// Toggle staging for a file from file tree
+		return m, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			var err error
+			if msg.IsStaged {
+				err = m.gitProvider.Unstage(ctx, msg.Path)
+			} else {
+				err = m.gitProvider.Stage(ctx, msg.Path)
+			}
+			if err != nil {
+				return ErrorMsg{Err: err}
+			}
+			// Trigger git status refresh
+			return gitRefreshMsg{}
+		}
+
+	case gitpanel.StageToggleMsg:
+		// Toggle staging for a file
+		return m, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			var err error
+			if msg.IsStaged {
+				err = m.gitProvider.Unstage(ctx, msg.Path)
+			} else {
+				err = m.gitProvider.Stage(ctx, msg.Path)
+			}
+			if err != nil {
+				return ErrorMsg{Err: err}
+			}
+			// Trigger git status refresh
+			return gitRefreshMsg{}
+		}
+
+	case gitpanel.OpenCommitMsg:
+		// Open commit dialog
+		m.showCommitDialog = true
+		m.commitInput.SetValue("")
+		m.commitInput.Focus()
+		return m, textinput.Blink
 
 	case filetree.LoadedMsg:
 		// Route to file tree
@@ -682,7 +784,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					newPercent = layout.MaxLeftPanelPercent
 				}
 				m.leftPanelPercent = newPercent
-				m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent)
+				m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent, m.gitPanelVisible)
 				m = m.updateSizes()
 			}
 			return m, nil
@@ -756,7 +858,20 @@ func (m Model) updateSizes() Model {
 		mainHeight = 0
 	}
 
-	m.fileTree = m.fileTree.SetSize(leftWidth, mainHeight)
+	// Calculate left panel heights (file tree and git panel)
+	fileTreeHeight := m.layout.FileTreeHeight - 2
+	gitPanelHeight := m.layout.GitPanelHeight - 2
+	if fileTreeHeight < 0 {
+		fileTreeHeight = 0
+	}
+	if gitPanelHeight < 0 {
+		gitPanelHeight = 0
+	}
+
+	m.fileTree = m.fileTree.SetSize(leftWidth, fileTreeHeight)
+	if m.gitPanelVisible {
+		m.gitPanel = m.gitPanel.SetSize(leftWidth, gitPanelHeight)
+	}
 	m.content = m.content.SetSize(rightWidth, mainHeight)
 
 	// Size mini buffer if visible
@@ -782,6 +897,8 @@ func (m *Model) routeToFocused(msg tea.Msg) tea.Cmd {
 	switch m.focus {
 	case PanelFileTree:
 		m.fileTree, cmd = m.fileTree.Update(msg)
+	case PanelGitPanel:
+		m.gitPanel, cmd = m.gitPanel.Update(msg)
 	case PanelContent:
 		m.content, cmd = m.content.Update(msg)
 	case PanelMiniBuffer:
@@ -868,34 +985,86 @@ func (m Model) View() tea.View {
 		return v
 	}
 
+	// Show commit dialog
+	if m.showCommitDialog {
+		v := tea.NewView(m.renderCommitDialog(view))
+		v.AltScreen = true
+		v.MouseMode = tea.MouseModeCellMotion
+		return v
+	}
+
 	v := tea.NewView(view)
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
 
-// renderLeftPanel renders the file tree panel.
+// renderLeftPanel renders the file tree panel (and git panel if visible).
 func (m Model) renderLeftPanel() string {
-	focused := m.focus == PanelFileTree
+	fileTreeFocused := m.focus == PanelFileTree
 
-	var bottomHints string
-	if focused {
-		bottomHints = "↑↓:nav  enter:open"
+	var fileTreeHints string
+	if fileTreeFocused {
+		bottomHints := "↑↓:nav  enter:open"
+		if m.isGitRepo {
+			bottomHints += "  space:stage"
+		}
+		fileTreeHints = bottomHints
 	}
 
-	opts := theme.PanelTitleOptions{
+	fileTreeOpts := theme.PanelTitleOptions{
 		Title:         "FILES",
 		ScrollPercent: -1, // Don't show scroll indicator
-		BottomHints:   bottomHints,
+		BottomHints:   fileTreeHints,
 	}
 
-	return theme.RenderPanelWithTitle(
+	fileTreePanel := theme.RenderPanelWithTitle(
 		m.fileTree.View(),
-		opts,
+		fileTreeOpts,
 		m.layout.LeftWidth,
-		m.layout.MainHeight,
-		focused,
+		m.layout.FileTreeHeight,
+		fileTreeFocused,
 	)
+
+	// If git panel is not visible, just return file tree
+	if !m.gitPanelVisible {
+		return fileTreePanel
+	}
+
+	// Render git panel
+	gitPanelFocused := m.focus == PanelGitPanel
+
+	var gitPanelHints string
+	if gitPanelFocused {
+		gitPanelHints = "space:stage  c:commit"
+	}
+
+	// Build git panel title with counts
+	stagedCount := m.gitPanel.StagedCount()
+	unstagedCount := m.gitPanel.UnstagedCount()
+	gitTitle := "GIT"
+	if stagedCount > 0 || unstagedCount > 0 {
+		gitTitle = "GIT " +
+			theme.GitStatusAdded.Render("●"+string(rune('0'+stagedCount))) + " " +
+			theme.GitStatusModified.Render("○"+string(rune('0'+unstagedCount)))
+	}
+
+	gitPanelOpts := theme.PanelTitleOptions{
+		Title:         gitTitle,
+		ScrollPercent: -1,
+		BottomHints:   gitPanelHints,
+	}
+
+	gitPanel := theme.RenderPanelWithTitle(
+		m.gitPanel.View(),
+		gitPanelOpts,
+		m.layout.LeftWidth,
+		m.layout.GitPanelHeight,
+		gitPanelFocused,
+	)
+
+	// Join file tree and git panel vertically
+	return lipgloss.JoinVertical(lipgloss.Left, fileTreePanel, gitPanel)
 }
 
 // renderRightPanel renders the content panel.
@@ -1120,6 +1289,8 @@ func (m Model) setFocus(target PanelID) Model {
 	switch m.focus {
 	case PanelFileTree:
 		m.fileTree = m.fileTree.Blur()
+	case PanelGitPanel:
+		m.gitPanel = m.gitPanel.Blur()
 	case PanelContent:
 		m.content = m.content.Blur()
 	case PanelMiniBuffer:
@@ -1133,6 +1304,8 @@ func (m Model) setFocus(target PanelID) Model {
 	switch target {
 	case PanelFileTree:
 		m.fileTree = m.fileTree.Focus()
+	case PanelGitPanel:
+		m.gitPanel = m.gitPanel.Focus()
 	case PanelContent:
 		m.content = m.content.Focus()
 	case PanelMiniBuffer:
@@ -1155,45 +1328,31 @@ func (m Model) MiniVisible() bool {
 // renderHelpOverlay renders the help overlay on top of the existing view.
 func (m Model) renderHelpOverlay(_ string) string {
 	// Help content
+	// Two-column help layout - use fixed-width strings
+	// Title row spans full width, then column divider starts below
 	helpLines := []string{
-		"╔══════════════════════════════════════════════════════════╗",
-		"║                  VIBE COMMANDER HELP                     ║",
-		"╠══════════════════════════════════════════════════════════╣",
-		"║  NAVIGATION                                              ║",
-		"║    ↑/k, ↓/j      Move up/down                            ║",
-		"║    ←/h, →/l      Collapse/Expand or navigate             ║",
-		"║    Enter         Select file or toggle directory         ║",
-		"║    PgUp/PgDn     Page up/down                            ║",
-		"║    Home/g        Go to top                               ║",
-		"║    End/G         Go to bottom                            ║",
-		"║                                                          ║",
-		"║  PANELS                                                  ║",
-		"║    Alt+1         Focus file tree                         ║",
-		"║    Alt+2         Focus content (2x = fullscreen)         ║",
-		"║    Alt+3         Toggle terminal                         ║",
-		"║    Alt+[         Shrink file tree                        ║",
-		"║    Alt+]         Widen file tree                         ║",
-		"║                                                          ║",
-		"║  FILE TREE                                               ║",
-		"║    /             Search/filter files                     ║",
-		"║    Esc           Clear filter                            ║",
-		"║    Alt+I         Toggle compact indentation              ║",
-		"║                                                          ║",
-		"║  VIEWER (when viewing a file)                            ║",
-		"║    /             Search (regex)                          ║",
-		"║    Enter         Search / Next match                     ║",
-		"║    n/p           Next / Previous match                   ║",
-		"║    Esc           Cancel search                           ║",
-		"║                                                          ║",
-		"║  ACTIONS                                                 ║",
-		"║    Alt+A         Launch AI assistant                     ║",
-		"║    Alt+S         Select AI assistant                     ║",
-		"║    Alt+T         Cycle theme                             ║",
-		"║    Ctrl+H        Toggle this help                        ║",
-		"║    Ctrl+Q        Quit                                    ║",
-		"║                                                          ║",
-		"║              Press any key to close                      ║",
-		"╚══════════════════════════════════════════════════════════╝",
+		"╔═════════════════════════════════════════════════════════╗",
+		"║                   VIBE COMMANDER HELP                   ║",
+		"╠════════════════════════════╤════════════════════════════╣",
+		"║ NAVIGATION                 │ GIT                        ║",
+		"║   Up/k Down/j  Move        │   Space   Stage/Unstage    ║",
+		"║   Left/h Right/l Collapse  │   c       Commit (panel)   ║",
+		"║   Enter       Select/Open  │                            ║",
+		"║   PgUp/PgDn   Page scroll  │ VIEWER                     ║",
+		"║   Home/g End/G Top/Bottom  │   /       Search (regex)   ║",
+		"║                            │   n/p     Next/Prev match  ║",
+		"║ PANELS                     │   Esc     Cancel search    ║",
+		"║   Alt+1   Focus file tree  │                            ║",
+		"║   Alt+2   Focus content    │ ACTIONS                    ║",
+		"║   Alt+3   Toggle terminal  │   Alt+A   Launch AI        ║",
+		"║   Alt+G   Toggle git panel │   Alt+S   Select AI        ║",
+		"║   Alt+[/] Resize panels    │   Alt+T   Cycle theme      ║",
+		"║                            │   Ctrl+H  Toggle help      ║",
+		"║ FILE TREE                  │   Ctrl+Q  Quit             ║",
+		"║   /       Search files     │                            ║",
+		"║   Esc     Clear filter     │                            ║",
+		"║   Alt+I   Compact indent   │   Press any key to close   ║",
+		"╚════════════════════════════╧════════════════════════════╝",
 	}
 
 	helpContent := lipgloss.JoinVertical(lipgloss.Left, helpLines...)
@@ -1622,4 +1781,93 @@ func (m *Model) routeMouseToPanel(msg tea.Msg) tea.Cmd {
 	}
 
 	return cmd
+}
+
+// renderCommitDialog renders the commit message dialog.
+func (m Model) renderCommitDialog(_ string) string {
+	// Show staged files count
+	stagedCount := m.gitPanel.StagedCount()
+
+	// Get the raw commit message value and add cursor
+	inputValue := m.commitInput.Value()
+	cursorPos := m.commitInput.Position()
+
+	// Build display string with cursor
+	var displayMsg string
+	if cursorPos >= len(inputValue) {
+		displayMsg = inputValue + "█"
+	} else {
+		displayMsg = inputValue[:cursorPos] + "█" + inputValue[cursorPos:]
+	}
+
+	// Truncate if too long (keep last 52 chars to show cursor)
+	if len(displayMsg) > 52 {
+		displayMsg = displayMsg[len(displayMsg)-52:]
+	}
+
+	// Pad to fixed width
+	for len(displayMsg) < 52 {
+		displayMsg += " "
+	}
+
+	// Build the dialog content
+	var content strings.Builder
+	content.WriteString("                       COMMIT CHANGES                         \n")
+	content.WriteString("──────────────────────────────────────────────────────────────\n")
+	content.WriteString("                                                              \n")
+	content.WriteString("  Staged files: " + itoa(stagedCount) + strings.Repeat(" ", 45-len(itoa(stagedCount))) + "\n")
+	content.WriteString("                                                              \n")
+	content.WriteString("  Commit message:                                             \n")
+	content.WriteString("  ┌────────────────────────────────────────────────────┐      \n")
+	content.WriteString("  │ " + displayMsg + " │      \n")
+	content.WriteString("  └────────────────────────────────────────────────────┘      \n")
+	content.WriteString("                                                              \n")
+	content.WriteString("      [Enter] Commit    [Esc] Cancel                          ")
+
+	dialogStyle := lipgloss.NewStyle().
+		Foreground(theme.CyberCyan).
+		Border(lipgloss.DoubleBorder()).
+		BorderForeground(theme.CyberCyan).
+		Padding(1, 2)
+
+	dialogBox := dialogStyle.Render(content.String())
+
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		dialogBox,
+	)
+}
+
+// handleCommitDialog handles keyboard input for the commit dialog.
+func (m Model) handleCommitDialog(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		// Cancel commit
+		m.showCommitDialog = false
+		m.commitInput.Blur()
+		return m, nil
+
+	case "enter":
+		// Execute commit if message is not empty
+		commitMsg := strings.TrimSpace(m.commitInput.Value())
+		if commitMsg == "" {
+			return m, nil
+		}
+		m.showCommitDialog = false
+		m.commitInput.Blur()
+		// Use tea.ExecProcess to suspend TUI and allow GPG passphrase input
+		cmd := exec.Command("git", "commit", "-m", commitMsg)
+		cmd.Dir = m.workDir
+		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+			return gitCommitFinishedMsg{err: err}
+		})
+	}
+
+	// Pass all other keys to textinput
+	var cmd tea.Cmd
+	m.commitInput, cmd = m.commitInput.Update(msg)
+	return m, cmd
 }

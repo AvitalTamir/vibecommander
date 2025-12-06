@@ -6,6 +6,7 @@ const (
 	MinLeftPanelPercent     = 15
 	MaxLeftPanelPercent     = 60
 	MiniBufferPercent       = 25
+	GitPanelPercent         = 50 // Git panel takes 50% of left panel when visible
 	StatusBarHeight         = 1
 	MinPanelWidth           = 20
 	MinPanelHeight          = 5
@@ -25,21 +26,28 @@ type Layout struct {
 	MainHeight int
 	MiniHeight int
 
+	// Left panel split (for git panel)
+	FileTreeHeight int
+	GitPanelHeight int
+
 	// Status bar
 	StatusHeight int
 
-	// Mini buffer visibility
-	MiniVisible bool
+	// Visibility flags
+	MiniVisible     bool
+	GitPanelVisible bool
 }
 
 // Calculate computes the layout dimensions based on terminal size.
 // leftPercent controls the width of the left panel (file tree).
-func Calculate(width, height int, miniVisible bool, leftPercent int) Layout {
+// gitPanelVisible controls whether the git panel splits the left panel.
+func Calculate(width, height int, miniVisible bool, leftPercent int, gitPanelVisible bool) Layout {
 	l := Layout{
-		TotalWidth:   width,
-		TotalHeight:  height,
-		StatusHeight: StatusBarHeight,
-		MiniVisible:  miniVisible,
+		TotalWidth:      width,
+		TotalHeight:     height,
+		StatusHeight:    StatusBarHeight,
+		MiniVisible:     miniVisible,
+		GitPanelVisible: gitPanelVisible,
 	}
 
 	// Clamp left panel percentage to valid range
@@ -62,13 +70,22 @@ func Calculate(width, height int, miniVisible bool, leftPercent int) Layout {
 	// Reserve status bar
 	availableHeight := height - l.StatusHeight
 
-	// Calculate vertical split
+	// Calculate vertical split for mini buffer
 	if miniVisible {
 		l.MiniHeight = max(availableHeight*MiniBufferPercent/100, MinPanelHeight)
 		l.MainHeight = max(availableHeight-l.MiniHeight-1, MinPanelHeight)
 	} else {
 		l.MiniHeight = 0
 		l.MainHeight = availableHeight
+	}
+
+	// Calculate left panel vertical split for git panel
+	if gitPanelVisible {
+		l.GitPanelHeight = max(l.MainHeight*GitPanelPercent/100, MinPanelHeight)
+		l.FileTreeHeight = max(l.MainHeight-l.GitPanelHeight, MinPanelHeight)
+	} else {
+		l.FileTreeHeight = l.MainHeight
+		l.GitPanelHeight = 0
 	}
 
 	return l
@@ -84,9 +101,17 @@ func (l Layout) ContentHeight(panelHeight int, borderHeight int) int {
 	return max(panelHeight-borderHeight*2, 0)
 }
 
-// LeftPanelBounds returns the position and size of the left panel.
+// LeftPanelBounds returns the position and size of the left panel (file tree area).
 func (l Layout) LeftPanelBounds() (x, y, width, height int) {
-	return 0, 0, l.LeftWidth, l.MainHeight
+	return 0, 0, l.LeftWidth, l.FileTreeHeight
+}
+
+// GitPanelBounds returns the position and size of the git panel.
+func (l Layout) GitPanelBounds() (x, y, width, height int) {
+	if !l.GitPanelVisible {
+		return 0, 0, 0, 0
+	}
+	return 0, l.FileTreeHeight, l.LeftWidth, l.GitPanelHeight
 }
 
 // RightPanelBounds returns the position and size of the right panel.

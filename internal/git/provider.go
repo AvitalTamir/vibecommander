@@ -15,6 +15,15 @@ type Provider interface {
 
 	// IsRepo checks if the current directory is a git repository
 	IsRepo() bool
+
+	// Stage adds a file to the staging area
+	Stage(ctx context.Context, path string) error
+
+	// Unstage removes a file from the staging area
+	Unstage(ctx context.Context, path string) error
+
+	// Commit creates a new commit with the given message
+	Commit(ctx context.Context, message string) error
 }
 
 // Status represents the overall repository status.

@@ -6,8 +6,9 @@ type PanelID int
 const (
 	PanelNone       PanelID = iota // 0 = no panel (used for clicks outside panels)
 	PanelFileTree                  // 1
-	PanelContent                   // 2
-	PanelMiniBuffer                // 3
+	PanelGitPanel                  // 2
+	PanelContent                   // 3
+	PanelMiniBuffer                // 4
 )
 
 // String returns the panel name for debugging.
@@ -17,6 +18,8 @@ func (p PanelID) String() string {
 		return "None"
 	case PanelFileTree:
 		return "FileTree"
+	case PanelGitPanel:
+		return "GitPanel"
 	case PanelContent:
 		return "Content"
 	case PanelMiniBuffer:
