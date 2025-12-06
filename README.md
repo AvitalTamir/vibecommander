@@ -8,17 +8,11 @@
 
 # Vibe Commander
 
-## What?
-
-Vibe Commander is an IVE (Interactive Vibe Environment!). It wraps around your AI Assistant CLI so you can spend your entire session in the same terminal tab.
+A terminal-based IVE (Interactive Vibe Environment) for AI coding assistants. Norton Commander vibes, modern AI workflows.
 
 ## Why?
 
-Have been building this as a tool to bring my flow from 99% there to 100%.
-
-I nowadays do pretty much everything using Claude Code and only ever hop into other terminal tabs to view the occasional file or run some git commands.
-
-Vision was to have these minimal facilities in a familiar IDE style layout that evokes old time Norton Commander memories.
+Built for developers who live in their terminal with AI assistants like Claude Code, Gemini CLI, or Codex. Instead of jumping between terminal tabs to check files, view diffs, or stage commits—do it all in one place while your AI does the heavy lifting.
 
 ## Quick Start
 
@@ -36,50 +30,87 @@ go install github.com/avitaltamir/vibecommander/cmd/vc@latest
 
 ```bash
 vc
-
-# Press Alt+A once IVE is running
 ```
 
-## The Layout
+Press `Alt+A` to launch your AI assistant, or `Alt+S` to choose between Claude, Gemini, Codex, or a custom command.
 
-| Panel | What it does |
-|-------|-------------|
-| **File Tree** | Browse your project. Git status baked in—green for staged, yellow for modified, purple for untracked. |
-| **Viewer** | Syntax-highlighted code. Regex search. Diff view for modified files. |
-| **Terminal** | A real shell. Run tests, git commands, or fire up your AI assistant. |
+## Features
+
+### File Tree
+- Browse your project with vim-style navigation
+- Git status indicators (green=staged, yellow=modified, purple=untracked)
+- Fuzzy search with `/`
+- Stage/unstage files with `Space`
+- Compact indent toggle with `Alt+I`
+
+### Code Viewer
+- Syntax highlighting
+- Regex search (`/`, then `n`/`p` for next/prev)
+- Inline diff view for modified files
+
+### Git Panel
+- Toggle with `Alt+G` to see staged/unstaged changes
+- Stage/unstage files with `Space`
+- Commit with `c` (supports GPG signing)
+
+### AI Integration
+- Supports Claude Code, Gemini CLI, Codex, or any custom command
+- AI selection persists across sessions
+- Full terminal emulation—your AI has complete control
+
+### Layout
+- Resizable panels with `Alt+[` and `Alt+]`
+- Fullscreen content with `Alt+2` (toggle)
+- Panel sizes persist across sessions
 
 ## Keybindings
 
-### Panel Control
+### Panels
 | Key | Action |
 |-----|--------|
-| `Alt+1` | Jump to file tree |
-| `Alt+2` | Jump to viewer (again for fullscreen) |
+| `Alt+1` | Focus file tree |
+| `Alt+2` | Focus content (again for fullscreen) |
 | `Alt+3` | Toggle terminal |
-| `Alt+A` | Launch AI assistant |
+| `Alt+G` | Toggle git panel |
+| `Alt+[` / `Alt+]` | Resize panels |
 
 ### Navigation
 | Key | Action |
 |-----|--------|
 | `↑/k` `↓/j` | Move up/down |
 | `←/h` `→/l` | Collapse/expand |
-| `Enter` | Open file / toggle dir |
-| `g/G` | Top/bottom |
-| `/` | Search (regex) |
-| `n/p` | Next/prev match |
+| `Enter` | Open file / toggle directory |
+| `PgUp/PgDn` | Page scroll |
+| `Home/g` `End/G` | Jump to top/bottom |
 
-### System
+### Search
 | Key | Action |
 |-----|--------|
+| `/` | Search (file tree: filter, viewer: regex) |
+| `n` / `p` | Next/prev match |
+| `Esc` | Clear search |
+
+### Git
+| Key | Action |
+|-----|--------|
+| `Space` | Stage/unstage file |
+| `c` | Commit (in git panel) |
+
+### Actions
+| Key | Action |
+|-----|--------|
+| `Alt+A` | Launch AI assistant |
+| `Alt+S` | Select AI assistant |
 | `Alt+T` | Cycle theme |
-| `Ctrl+H` | Help |
+| `Alt+I` | Toggle compact indent |
+| `Ctrl+H` | Toggle help |
 | `Ctrl+Q` | Quit |
 
-> **Mac users:** Works with both Option and Alt—no terminal config needed.
+> **Mac users:** Option key works as Alt—no terminal config needed.
 
 ## Themes
 
-Because your terminal should match your aesthetic.
+Cycle through with `Alt+T`:
 
 | Theme | Vibe |
 |-------|------|
@@ -89,11 +120,8 @@ Because your terminal should match your aesthetic.
 | **Feral Jungle** | Deep rainforest. Touch grass, but make it terminal. |
 | **Vampire Weekend** | Gothic but make it indie. Dark academia core. |
 
-Cycle through with `Alt+T`.
-
 ## Requirements
 
-- Go 1.24+
 - 256-color terminal
 - A [Nerd Font](https://www.nerdfonts.com/) for file icons (optional but recommended)
 
@@ -102,8 +130,8 @@ Cycle through with `Alt+T`.
 ```bash
 git clone https://github.com/avitaltamir/vibecommander.git
 cd vibecommander
-go build -o vc ./cmd/vc
-./vc
+make build
+./bin/vc
 ```
 
 ---
