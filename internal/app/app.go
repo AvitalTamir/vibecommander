@@ -518,7 +518,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.fullscreen = PanelNone
 				m = m.updateSizes()
 			}
-			// Always toggle terminal on/off
+			// If terminal is visible but not focused, just focus it
+			if m.miniVisible && m.focus != PanelMiniBuffer {
+				m = m.setFocus(PanelMiniBuffer)
+				return m, nil
+			}
+			// Otherwise toggle terminal on/off
 			m.miniVisible = !m.miniVisible
 			m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent, m.gitPanelVisible)
 			m = m.updateSizes()
@@ -534,7 +539,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.ToggleGitPanel):
-			// Toggle git panel visibility
+			// If git panel is visible but not focused, just focus it
+			if m.gitPanelVisible && m.focus != PanelGitPanel {
+				m = m.setFocus(PanelGitPanel)
+				return m, nil
+			}
+			// Otherwise toggle git panel visibility
 			m.gitPanelVisible = !m.gitPanelVisible
 			m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent, m.gitPanelVisible)
 			m = m.updateSizes()
@@ -619,8 +629,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case filetree.SelectMsg:
-		// File selected in file tree - open it in content pane
+		// File selected in file tree - open it in content pane and focus viewer
 		if !msg.IsDir {
+			m = m.setFocus(PanelContent)
 			return m, func() tea.Msg {
 				return content.OpenFileMsg{Path: msg.Path}
 			}
@@ -669,6 +680,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commitInput.SetValue("")
 		m.commitInput.Focus()
 		return m, textinput.Blink
+
+	case gitpanel.OpenFileMsg:
+		// Open file from git panel - same as file tree behavior
+		fullPath := filepath.Join(m.workDir, msg.Path)
+		m = m.setFocus(PanelContent)
+		return m, func() tea.Msg {
+			return content.OpenFileMsg{Path: fullPath}
+		}
 
 	case filetree.LoadedMsg:
 		// Route to file tree
@@ -1678,13 +1697,27 @@ func (m Model) panelAtPosition(x, y int) PanelID {
 		}
 	}
 
-	// Check main panels (file tree and content)
-	_, _, leftW, mainH := m.layout.LeftPanelBounds()
-	if y < mainH {
-		if x < leftW {
+	// Check left panel area (file tree and git panel)
+	_, _, leftW, fileTreeH := m.layout.LeftPanelBounds()
+	if x < leftW {
+		// Check if git panel is visible and click is in git panel area
+		if m.gitPanelVisible {
+			_, gitY, _, gitH := m.layout.GitPanelBounds()
+			if y >= gitY && y < gitY+gitH {
+				return PanelGitPanel
+			}
+		}
+		// Otherwise it's the file tree (if within its bounds)
+		if y < fileTreeH {
 			return PanelFileTree
 		}
-		return PanelContent
+	}
+
+	// Check content panel
+	if y < m.layout.MainHeight {
+		if x >= leftW {
+			return PanelContent
+		}
 	}
 
 	return PanelNone // Status bar or outside panels
@@ -1735,6 +1768,15 @@ func (m *Model) routeMouseClickToPanel(msg tea.MouseClickMsg) tea.Cmd {
 	switch targetPanel {
 	case PanelFileTree:
 		m.fileTree, cmd = m.fileTree.Update(msg)
+	case PanelGitPanel:
+		if m.gitPanelVisible {
+			// Adjust Y coordinate relative to git panel
+			_, gitY, _, _ := m.layout.GitPanelBounds()
+			// Create adjusted mouse event with Y relative to git panel
+			adjustedMouse := mouse
+			adjustedMouse.Y = mouse.Y - gitY
+			m.gitPanel, cmd = m.gitPanel.Update(tea.MouseClickMsg(adjustedMouse))
+		}
 	case PanelContent:
 		m.content, cmd = m.content.Update(msg)
 	case PanelMiniBuffer:

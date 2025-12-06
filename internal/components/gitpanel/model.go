@@ -22,6 +22,11 @@ type (
 
 	// OpenCommitMsg is sent when user wants to open the commit dialog.
 	OpenCommitMsg struct{}
+
+	// OpenFileMsg is sent when user wants to open a file in the viewer.
+	OpenFileMsg struct {
+		Path string
+	}
 )
 
 // FileEntry represents a file in the git panel list.
@@ -41,6 +46,7 @@ type KeyMap struct {
 	End      key.Binding
 	Toggle   key.Binding
 	Commit   key.Binding
+	Open     key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings.
@@ -69,6 +75,9 @@ func DefaultKeyMap() KeyMap {
 		),
 		Commit: key.NewBinding(
 			key.WithKeys("c"),
+		),
+		Open: key.NewBinding(
+			key.WithKeys("enter"),
 		),
 	}
 }
@@ -152,6 +161,15 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		if m.hasStagedFiles() {
 			return m, func() tea.Msg { return OpenCommitMsg{} }
 		}
+
+	case key.Matches(msg, m.keys.Open):
+		// Open selected file in viewer
+		if m.cursor >= 0 && m.cursor < len(m.entries) {
+			entry := m.entries[m.cursor]
+			return m, func() tea.Msg {
+				return OpenFileMsg{Path: entry.Path}
+			}
+		}
 	}
 
 	return m, nil
@@ -171,11 +189,16 @@ func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) (Model, tea.Cmd) {
 func (m Model) handleMouseClick(msg tea.MouseClickMsg) (Model, tea.Cmd) {
 	mouse := msg.Mouse()
 	if mouse.Button == tea.MouseLeft {
-		// Calculate which item was clicked (account for header)
+		// Calculate which item was clicked (account for border)
 		clickedIdx := m.offset + mouse.Y - 1
 		if clickedIdx >= 0 && clickedIdx < len(m.entries) {
 			m.cursor = clickedIdx
 			m.MarkDirty()
+			// Open the file (same as pressing Enter)
+			entry := m.entries[m.cursor]
+			return m, func() tea.Msg {
+				return OpenFileMsg{Path: entry.Path}
+			}
 		}
 	}
 	return m, nil
