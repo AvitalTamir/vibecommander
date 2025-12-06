@@ -1187,7 +1187,7 @@ func (m Model) renderHelpOverlay(_ string) string {
 		"║                                                          ║",
 		"║  ACTIONS                                                 ║",
 		"║    Alt+A         Launch AI assistant                     ║",
-		"║    Ctrl+Alt+A    Select AI assistant                     ║",
+		"║    Alt+S         Select AI assistant                     ║",
 		"║    Alt+T         Cycle theme                             ║",
 		"║    Ctrl+H        Toggle this help                        ║",
 		"║    Ctrl+Q        Quit                                    ║",

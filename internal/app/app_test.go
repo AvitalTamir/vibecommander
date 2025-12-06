@@ -365,14 +365,14 @@ func TestAIDialogOptions(t *testing.T) {
 }
 
 func TestAIDialogKeyHandling(t *testing.T) {
-	t.Run("Ctrl+Alt+A opens AI dialog", func(t *testing.T) {
+	t.Run("Alt+S opens AI dialog", func(t *testing.T) {
 		m := New()
 		m.width = 100
 		m.height = 40
 		m.ready = true
 
-		// Simulate Ctrl+Alt+A
-		newModel, _ := m.Update(tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl | tea.ModAlt})
+		// Simulate Alt+S
+		newModel, _ := m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModAlt})
 		model := newModel.(Model)
 
 		assert.True(t, model.showAIDialog)
@@ -573,5 +573,5 @@ func TestSelectAIKeyBinding(t *testing.T) {
 	km := DefaultKeyMap()
 
 	assert.NotEmpty(t, km.SelectAI.Keys())
-	assert.Contains(t, km.SelectAI.Keys(), "ctrl+alt+a")
+	assert.Contains(t, km.SelectAI.Keys(), "alt+s")
 }

@@ -127,8 +127,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("M-a", "launch AI"),
 		),
 		SelectAI: key.NewBinding(
-			key.WithKeys("ctrl+alt+a"), // Ctrl+Alt+A to select AI assistant
-			key.WithHelp("^M-a", "select AI"),
+			key.WithKeys("alt+s", "ß"), // ß = Option+s on Mac
+			key.WithHelp("M-s", "select AI"),
 		),
 
 		// Theme
