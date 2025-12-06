@@ -554,6 +554,24 @@
       color: var(--neon-pink);
       text-shadow: 0 0 10px var(--neon-pink);
       margin: 1rem 0;
+      overflow-x: auto;
+      white-space: nowrap;
+      padding: 0.5rem;
+      scrollbar-width: thin;
+      scrollbar-color: var(--neon-pink) transparent;
+    }
+
+    .install-code::-webkit-scrollbar {
+      height: 6px;
+    }
+
+    .install-code::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .install-code::-webkit-scrollbar-thumb {
+      background: var(--neon-pink);
+      border-radius: 3px;
     }
 
     .install-or {
