@@ -173,3 +173,33 @@ func parseIntSafe(s string) (int, error) {
 	}
 	return n, nil
 }
+
+// Stage adds a file to the staging area.
+func (p *ShellProvider) Stage(ctx context.Context, path string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	cmd := exec.CommandContext(ctx, "git", "add", "--", path)
+	cmd.Dir = p.workDir
+	return cmd.Run()
+}
+
+// Unstage removes a file from the staging area.
+func (p *ShellProvider) Unstage(ctx context.Context, path string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	cmd := exec.CommandContext(ctx, "git", "restore", "--staged", "--", path)
+	cmd.Dir = p.workDir
+	return cmd.Run()
+}
+
+// Commit creates a new commit with the given message.
+func (p *ShellProvider) Commit(ctx context.Context, message string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	cmd := exec.CommandContext(ctx, "git", "commit", "-m", message)
+	cmd.Dir = p.workDir
+	return cmd.Run()
+}

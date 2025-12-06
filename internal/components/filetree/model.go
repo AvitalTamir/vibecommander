@@ -28,6 +28,12 @@ type (
 		Path  string
 		IsDir bool
 	}
+
+	// StageToggleMsg is sent when user wants to toggle staging for a file.
+	StageToggleMsg struct {
+		Path     string
+		IsStaged bool // Current state (will be toggled)
+	}
 )
 
 // KeyMap defines the key bindings for the file tree.
@@ -415,6 +421,7 @@ func (m Model) handleToggle() (Model, tea.Cmd) {
 
 	node := m.visible[m.cursor]
 	if node.IsDir {
+		// Directory: expand/collapse
 		node.Toggle()
 		if node.Expanded && !node.Loaded && !m.loading[node.Path] {
 			m.loading[node.Path] = true
@@ -422,6 +429,23 @@ func (m Model) handleToggle() (Model, tea.Cmd) {
 			return m, m.loadChildren(node.Path)
 		}
 		m.rebuildVisible()
+		return m, nil
+	}
+
+	// File: check for git changes and emit staging toggle
+	if m.gitStatus != nil && m.workDir != "" {
+		relPath, err := filepath.Rel(m.workDir, node.Path)
+		if err == nil {
+			if status, ok := m.gitStatus.Files[relPath]; ok && status.HasChanges() {
+				isStaged := status.IsStaged()
+				return m, func() tea.Msg {
+					return StageToggleMsg{
+						Path:     node.Path,
+						IsStaged: isStaged,
+					}
+				}
+			}
+		}
 	}
 
 	return m, nil

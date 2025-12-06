@@ -34,6 +34,9 @@ type KeyMap struct {
 	LaunchAI key.Binding
 	SelectAI key.Binding
 
+	// Git
+	ToggleGitPanel key.Binding
+
 	// Theme
 	CycleTheme key.Binding
 }
@@ -131,6 +134,12 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("M-s", "select AI"),
 		),
 
+		// Git
+		ToggleGitPanel: key.NewBinding(
+			key.WithKeys("alt+g", "©"), // © = Option+g on Mac
+			key.WithHelp("M-g", "git panel"),
+		),
+
 		// Theme
 		CycleTheme: key.NewBinding(
 			key.WithKeys("alt+t", "†"), // † = Option+t on Mac
@@ -152,6 +161,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.Enter, k.Back, k.Delete},
 		{k.FocusTree, k.FocusContent, k.ToggleMini},
 		{k.ShrinkTree, k.WidenTree},
-		{k.LaunchAI, k.SelectAI, k.Help, k.Quit},
+		{k.ToggleGitPanel, k.LaunchAI, k.SelectAI},
+		{k.CycleTheme, k.Help, k.Quit},
 	}
 }
