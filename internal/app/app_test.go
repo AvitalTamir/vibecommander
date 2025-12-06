@@ -309,3 +309,269 @@ func TestPanelAtPosition(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckCommandAvailable(t *testing.T) {
+	t.Run("empty command returns false", func(t *testing.T) {
+		assert.False(t, checkCommandAvailable(""))
+	})
+
+	t.Run("whitespace only returns false", func(t *testing.T) {
+		assert.False(t, checkCommandAvailable("   "))
+	})
+
+	t.Run("existing command returns true", func(t *testing.T) {
+		// 'ls' should exist on all unix systems
+		assert.True(t, checkCommandAvailable("ls"))
+	})
+
+	t.Run("non-existent command returns false", func(t *testing.T) {
+		assert.False(t, checkCommandAvailable("definitely-not-a-real-command-12345"))
+	})
+
+	t.Run("command with args checks only first word", func(t *testing.T) {
+		// 'ls' with args should still return true
+		assert.True(t, checkCommandAvailable("ls -la --color"))
+	})
+
+	t.Run("non-existent command with args returns false", func(t *testing.T) {
+		assert.False(t, checkCommandAvailable("not-real-cmd --flag value"))
+	})
+}
+
+func TestAIDialogOptions(t *testing.T) {
+	m := New()
+
+	t.Run("returns four options", func(t *testing.T) {
+		options := m.getAIDialogOptions()
+		assert.Len(t, options, 4)
+		assert.Equal(t, "Claude", options[0].name)
+		assert.Equal(t, "Gemini", options[1].name)
+		assert.Equal(t, "Codex", options[2].name)
+		assert.Equal(t, "Other", options[3].name)
+	})
+
+	t.Run("Other option uses custom command", func(t *testing.T) {
+		m.aiDialogCustom = "my-custom-cli"
+		options := m.getAIDialogOptions()
+		assert.Equal(t, "my-custom-cli", options[3].command)
+	})
+
+	t.Run("Other option available when empty", func(t *testing.T) {
+		m.aiDialogCustom = ""
+		options := m.getAIDialogOptions()
+		// Empty custom command is considered "available" (for entering)
+		assert.True(t, options[3].available)
+	})
+}
+
+func TestAIDialogKeyHandling(t *testing.T) {
+	t.Run("Ctrl+Alt+A opens AI dialog", func(t *testing.T) {
+		m := New()
+		m.width = 100
+		m.height = 40
+		m.ready = true
+
+		// Simulate Ctrl+Alt+A
+		newModel, _ := m.Update(tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl | tea.ModAlt})
+		model := newModel.(Model)
+
+		assert.True(t, model.showAIDialog)
+		assert.Equal(t, 0, model.aiDialogIndex)
+	})
+
+	t.Run("Alt+A without configured AI opens dialog", func(t *testing.T) {
+		m := New()
+		m.width = 100
+		m.height = 40
+		m.ready = true
+		m.aiCommand = "" // No AI configured
+
+		// Simulate Alt+A
+		newModel, _ := m.Update(tea.KeyPressMsg{Code: 'a', Mod: tea.ModAlt})
+		model := newModel.(Model)
+
+		assert.True(t, model.showAIDialog)
+	})
+
+	t.Run("Escape closes AI dialog", func(t *testing.T) {
+		m := New()
+		m.width = 100
+		m.height = 40
+		m.ready = true
+		m.showAIDialog = true
+
+		newModel, _ := m.handleAIDialog(tea.KeyPressMsg{Code: tea.KeyEscape})
+		assert.False(t, newModel.showAIDialog)
+	})
+
+	t.Run("Down arrow moves selection down", func(t *testing.T) {
+		m := New()
+		m.showAIDialog = true
+		m.aiDialogIndex = 0
+
+		newModel, _ := m.handleAIDialog(tea.KeyPressMsg{Code: tea.KeyDown})
+		assert.Equal(t, 1, newModel.aiDialogIndex)
+	})
+
+	t.Run("Up arrow moves selection up", func(t *testing.T) {
+		m := New()
+		m.showAIDialog = true
+		m.aiDialogIndex = 2
+
+		newModel, _ := m.handleAIDialog(tea.KeyPressMsg{Code: tea.KeyUp})
+		assert.Equal(t, 1, newModel.aiDialogIndex)
+	})
+
+	t.Run("j key moves selection down", func(t *testing.T) {
+		m := New()
+		m.showAIDialog = true
+		m.aiDialogIndex = 0
+
+		newModel, _ := m.handleAIDialog(tea.KeyPressMsg{Code: 'j', Text: "j"})
+		assert.Equal(t, 1, newModel.aiDialogIndex)
+	})
+
+	t.Run("k key moves selection up", func(t *testing.T) {
+		m := New()
+		m.showAIDialog = true
+		m.aiDialogIndex = 2
+
+		newModel, _ := m.handleAIDialog(tea.KeyPressMsg{Code: 'k', Text: "k"})
+		assert.Equal(t, 1, newModel.aiDialogIndex)
+	})
+
+	t.Run("selection does not go below zero", func(t *testing.T) {
+		m := New()
+		m.showAIDialog = true
+		m.aiDialogIndex = 0
+
+		newModel, _ := m.handleAIDialog(tea.KeyPressMsg{Code: tea.KeyUp})
+		assert.Equal(t, 0, newModel.aiDialogIndex)
+	})
+
+	t.Run("selection does not exceed max", func(t *testing.T) {
+		m := New()
+		m.showAIDialog = true
+		m.aiDialogIndex = 3 // Last option (Other)
+
+		newModel, _ := m.handleAIDialog(tea.KeyPressMsg{Code: tea.KeyDown})
+		assert.Equal(t, 3, newModel.aiDialogIndex)
+	})
+
+	t.Run("Enter on Other with empty custom starts editing", func(t *testing.T) {
+		m := New()
+		m.showAIDialog = true
+		m.aiDialogIndex = 3 // Other
+		m.aiDialogCustom = ""
+
+		newModel, _ := m.handleAIDialog(tea.KeyPressMsg{Code: tea.KeyEnter})
+		assert.True(t, newModel.aiDialogEditing)
+		assert.True(t, newModel.showAIDialog) // Dialog still open
+	})
+}
+
+func TestAIDialogCustomEditing(t *testing.T) {
+	t.Run("typing adds characters", func(t *testing.T) {
+		m := New()
+		m.showAIDialog = true
+		m.aiDialogEditing = true
+		m.aiDialogCustom = ""
+
+		m, _ = m.handleAIDialog(tea.KeyPressMsg{Code: 'a', Text: "a"})
+		m, _ = m.handleAIDialog(tea.KeyPressMsg{Code: 'b', Text: "b"})
+		m, _ = m.handleAIDialog(tea.KeyPressMsg{Code: 'c', Text: "c"})
+
+		assert.Equal(t, "abc", m.aiDialogCustom)
+	})
+
+	t.Run("backspace removes characters", func(t *testing.T) {
+		m := New()
+		m.showAIDialog = true
+		m.aiDialogEditing = true
+		m.aiDialogCustom = "test"
+
+		m, _ = m.handleAIDialog(tea.KeyPressMsg{Code: tea.KeyBackspace})
+		assert.Equal(t, "tes", m.aiDialogCustom)
+	})
+
+	t.Run("backspace on empty string does nothing", func(t *testing.T) {
+		m := New()
+		m.showAIDialog = true
+		m.aiDialogEditing = true
+		m.aiDialogCustom = ""
+
+		m, _ = m.handleAIDialog(tea.KeyPressMsg{Code: tea.KeyBackspace})
+		assert.Equal(t, "", m.aiDialogCustom)
+	})
+
+	t.Run("escape cancels editing", func(t *testing.T) {
+		m := New()
+		m.showAIDialog = true
+		m.aiDialogEditing = true
+		m.aiDialogCustom = "partial"
+
+		m, _ = m.handleAIDialog(tea.KeyPressMsg{Code: tea.KeyEscape})
+		assert.False(t, m.aiDialogEditing)
+		assert.True(t, m.showAIDialog) // Dialog still open
+	})
+}
+
+func TestAIDialogRender(t *testing.T) {
+	t.Run("renders without panic", func(t *testing.T) {
+		m := New()
+		m.width = 100
+		m.height = 40
+		m.ready = true
+		m.showAIDialog = true
+
+		// Should not panic
+		result := m.renderAIDialog("")
+		assert.NotEmpty(t, result)
+		assert.Contains(t, result, "SELECT AI ASSISTANT")
+		assert.Contains(t, result, "Claude")
+		assert.Contains(t, result, "Gemini")
+		assert.Contains(t, result, "Codex")
+		assert.Contains(t, result, "Other")
+	})
+
+	t.Run("shows cursor when editing custom", func(t *testing.T) {
+		m := New()
+		m.width = 100
+		m.height = 40
+		m.ready = true
+		m.showAIDialog = true
+		m.aiDialogIndex = 3
+		m.aiDialogEditing = true
+		m.aiDialogCustom = "test"
+
+		result := m.renderAIDialog("")
+		// Should contain the custom command with cursor
+		assert.Contains(t, result, "test_")
+	})
+}
+
+func TestAIDialogView(t *testing.T) {
+	t.Run("View shows AI dialog when active", func(t *testing.T) {
+		m := New()
+		m.width = 100
+		m.height = 40
+		m.ready = true
+		m.showAIDialog = true
+		m.layout.LeftWidth = 25
+		m.layout.RightWidth = 75
+		m.layout.MainHeight = 39
+		m.layout.TotalWidth = 100
+
+		view := m.View()
+
+		// Verify view is properly configured
+		assert.True(t, view.AltScreen)
+	})
+}
+
+func TestSelectAIKeyBinding(t *testing.T) {
+	km := DefaultKeyMap()
+
+	assert.NotEmpty(t, km.SelectAI.Keys())
+	assert.Contains(t, km.SelectAI.Keys(), "ctrl+alt+a")
+}

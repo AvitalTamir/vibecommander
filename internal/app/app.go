@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -83,6 +84,14 @@ type Model struct {
 	aiLaunched      bool // Track if AI was launched this session
 	restoreAI       bool // Flag to restore AI on first window size msg
 	initialThemeIdx int  // Theme index to restore
+
+	// AI assistant selection
+	aiCommand        string   // Persisted AI command (e.g., "claude", "gemini")
+	aiArgs           []string // Persisted AI args
+	showAIDialog     bool     // Whether AI selection dialog is visible
+	aiDialogIndex    int      // Current selection in dialog (0=Claude, 1=Gemini, 2=Codex, 3=Other)
+	aiDialogCustom   string   // Custom command input when "Other" selected
+	aiDialogEditing  bool     // True when editing custom command in "Other"
 }
 
 // New creates a new application model.
@@ -132,6 +141,8 @@ func New() Model {
 		pendingFileChanges: make(map[string]fsnotify.Op),
 		restoreAI:          savedState.AIWindowOpen,
 		initialThemeIdx:    savedState.ThemeIndex,
+		aiCommand:          savedState.AICommand,
+		aiArgs:             savedState.AIArgs,
 	}
 }
 
@@ -400,6 +411,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Handle AI dialog
+		if m.showAIDialog {
+			return m.handleAIDialog(msg)
+		}
+
 		// Handle global keys
 		switch {
 		case key.Matches(msg, m.keys.Quit):
@@ -474,18 +490,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
+		case key.Matches(msg, m.keys.SelectAI):
+			// Show AI selection dialog
+			m.showAIDialog = true
+			m.aiDialogIndex = 0
+			return m, nil
+
 		case key.Matches(msg, m.keys.LaunchAI):
 			// If terminal is running in content pane, pass Ctrl+A to it instead
 			if m.focus == PanelContent && m.content.IsTerminalRunning() {
 				break // Let it fall through to be routed to focused component
+			}
+			// If no AI is configured, show selection dialog
+			if m.aiCommand == "" {
+				m.showAIDialog = true
+				m.aiDialogIndex = 0
+				return m, nil
 			}
 			// Launch AI assistant in content pane
 			m.aiLaunched = true
 			m = m.setFocus(PanelContent)
 			return m, func() tea.Msg {
 				return content.LaunchAIMsg{
-					Command: "claude",
-					Args:    []string{},
+					Command: m.aiCommand,
+					Args:    m.aiArgs,
 				}
 			}
 
@@ -832,6 +860,14 @@ func (m Model) View() tea.View {
 		return v
 	}
 
+	// Show AI selection dialog
+	if m.showAIDialog {
+		v := tea.NewView(m.renderAIDialog(view))
+		v.AltScreen = true
+		v.MouseMode = tea.MouseModeCellMotion
+		return v
+	}
+
 	v := tea.NewView(view)
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
@@ -1151,6 +1187,7 @@ func (m Model) renderHelpOverlay(_ string) string {
 		"║                                                          ║",
 		"║  ACTIONS                                                 ║",
 		"║    Alt+A         Launch AI assistant                     ║",
+		"║    Ctrl+Alt+A    Select AI assistant                     ║",
 		"║    Alt+T         Cycle theme                             ║",
 		"║    Ctrl+H        Toggle this help                        ║",
 		"║    Ctrl+Q        Quit                                    ║",
@@ -1209,6 +1246,250 @@ func (m Model) renderQuitDialog(_ string) string {
 	)
 }
 
+// checkCommandAvailable checks if a command is available in PATH.
+func checkCommandAvailable(cmd string) bool {
+	if cmd == "" {
+		return false
+	}
+	// Handle command with args - only check the first word
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return false
+	}
+	_, err := exec.LookPath(parts[0])
+	return err == nil
+}
+
+// aiDialogOptions returns the list of AI assistant options.
+type aiDialogOption struct {
+	name      string
+	command   string
+	available bool
+}
+
+func (m Model) getAIDialogOptions() []aiDialogOption {
+	return []aiDialogOption{
+		{name: "Claude", command: "claude", available: checkCommandAvailable("claude")},
+		{name: "Gemini", command: "gemini", available: checkCommandAvailable("gemini")},
+		{name: "Codex", command: "codex", available: checkCommandAvailable("codex")},
+		{name: "Other", command: m.aiDialogCustom, available: m.aiDialogCustom == "" || checkCommandAvailable(m.aiDialogCustom)},
+	}
+}
+
+// renderAIDialog renders the AI assistant selection dialog.
+func (m Model) renderAIDialog(_ string) string {
+	options := m.getAIDialogOptions()
+
+	// Box inner width is 50 characters (between the two ║ borders)
+	const boxInnerWidth = 50
+
+	// Helper to pad a string to exact width
+	padRight := func(s string, width int) string {
+		// Count runes for proper Unicode handling
+		runeCount := len([]rune(s))
+		if runeCount >= width {
+			return s
+		}
+		return s + strings.Repeat(" ", width-runeCount)
+	}
+
+	// Build dialog lines
+	dialogLines := []string{
+		"╔══════════════════════════════════════════════════╗",
+		"║           SELECT AI ASSISTANT                    ║",
+		"╠══════════════════════════════════════════════════╣",
+		"║                                                  ║",
+	}
+
+	for i, opt := range options {
+		var selector string
+		if i == m.aiDialogIndex {
+			selector = ">"
+		} else {
+			selector = " "
+		}
+
+		var content string
+		if opt.name == "Other" {
+			// For "Other" option, show the input field
+			var status string
+			if m.aiDialogEditing {
+				// Show cursor when editing
+				customDisplay := m.aiDialogCustom + "_"
+				if len(customDisplay) > 20 {
+					customDisplay = customDisplay[len(customDisplay)-20:]
+				}
+				status = customDisplay
+			} else if m.aiDialogCustom != "" {
+				customDisplay := m.aiDialogCustom
+				if len(customDisplay) > 20 {
+					customDisplay = customDisplay[:20]
+				}
+				if opt.available {
+					status = customDisplay + " [ok]"
+				} else {
+					status = customDisplay + " [not found]"
+				}
+			} else {
+				status = "(press Enter to set)"
+			}
+			content = "    [ " + selector + " ] " + opt.name + ": " + status
+		} else {
+			var status string
+			if opt.available {
+				status = "[ok]"
+			} else {
+				status = "[not found]"
+			}
+			nameWithSelector := "    [ " + selector + " ] " + opt.name
+			// Pad name to align status column
+			nameWithSelector = padRight(nameWithSelector, 22)
+			content = nameWithSelector + status
+		}
+
+		line := "║" + padRight(content, boxInnerWidth) + "║"
+		dialogLines = append(dialogLines, line)
+	}
+
+	dialogLines = append(dialogLines,
+		"║                                                  ║",
+		"║     [Enter] Select    [Esc] Cancel               ║",
+		"╚══════════════════════════════════════════════════╝",
+	)
+
+	dialogContent := lipgloss.JoinVertical(lipgloss.Left, dialogLines...)
+
+	dialogStyle := lipgloss.NewStyle().
+		Foreground(theme.CyberCyan).
+		Bold(true).
+		Padding(1, 2)
+
+	dialogBox := dialogStyle.Render(dialogContent)
+
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		dialogBox,
+	)
+}
+
+// handleAIDialog handles keyboard input for the AI selection dialog.
+func (m Model) handleAIDialog(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	options := m.getAIDialogOptions()
+
+	// If editing custom command
+	if m.aiDialogEditing {
+		switch msg.String() {
+		case "esc":
+			// Cancel editing
+			m.aiDialogEditing = false
+			return m, nil
+		case "enter":
+			// Finish editing
+			m.aiDialogEditing = false
+			// If custom command is valid, select it
+			if m.aiDialogCustom != "" && checkCommandAvailable(m.aiDialogCustom) {
+				m.showAIDialog = false
+				parts := strings.Fields(m.aiDialogCustom)
+				m.aiCommand = parts[0]
+				if len(parts) > 1 {
+					m.aiArgs = parts[1:]
+				} else {
+					m.aiArgs = nil
+				}
+				m.saveState()
+				// Launch the AI
+				m.aiLaunched = true
+				m = m.setFocus(PanelContent)
+				return m, func() tea.Msg {
+					return content.LaunchAIMsg{
+						Command: m.aiCommand,
+						Args:    m.aiArgs,
+					}
+				}
+			}
+			return m, nil
+		case "backspace":
+			if len(m.aiDialogCustom) > 0 {
+				m.aiDialogCustom = m.aiDialogCustom[:len(m.aiDialogCustom)-1]
+			}
+			return m, nil
+		default:
+			// Add character to custom command (printable characters only)
+			if len(msg.String()) == 1 {
+				r := rune(msg.String()[0])
+				if r >= 32 && r < 127 {
+					m.aiDialogCustom += string(r)
+				}
+			}
+			return m, nil
+		}
+	}
+
+	// Normal dialog navigation
+	switch msg.String() {
+	case "esc":
+		m.showAIDialog = false
+		return m, nil
+	case "up", "k":
+		if m.aiDialogIndex > 0 {
+			m.aiDialogIndex--
+		}
+		return m, nil
+	case "down", "j":
+		if m.aiDialogIndex < len(options)-1 {
+			m.aiDialogIndex++
+		}
+		return m, nil
+	case "enter":
+		opt := options[m.aiDialogIndex]
+		// If "Other" is selected, start editing
+		if opt.name == "Other" {
+			if m.aiDialogCustom == "" {
+				m.aiDialogEditing = true
+				return m, nil
+			}
+			// If custom command is set but not available, allow editing
+			if !opt.available {
+				m.aiDialogEditing = true
+				return m, nil
+			}
+		}
+		// Check if the selected option is available
+		if !opt.available {
+			// Can't select unavailable option
+			return m, nil
+		}
+		// Select the option
+		m.showAIDialog = false
+		if opt.name == "Other" {
+			parts := strings.Fields(m.aiDialogCustom)
+			m.aiCommand = parts[0]
+			if len(parts) > 1 {
+				m.aiArgs = parts[1:]
+			} else {
+				m.aiArgs = nil
+			}
+		} else {
+			m.aiCommand = opt.command
+			m.aiArgs = nil
+		}
+		m.saveState()
+		// Launch the AI
+		m.aiLaunched = true
+		m = m.setFocus(PanelContent)
+		return m, func() tea.Msg {
+			return content.LaunchAIMsg{
+				Command: m.aiCommand,
+				Args:    m.aiArgs,
+			}
+		}
+	}
+	return m, nil
+}
+
 // saveState persists the current application state globally.
 func (m Model) saveState() {
 	s := state.State{
@@ -1216,6 +1497,8 @@ func (m Model) saveState() {
 		ThemeIndex:       theme.CurrentThemeIndex(),
 		LeftPanelPercent: m.leftPanelPercent,
 		CompactIndent:    m.fileTree.CompactIndent(),
+		AICommand:        m.aiCommand,
+		AIArgs:           m.aiArgs,
 	}
 	// Ignore errors - state persistence is best-effort
 	_ = state.Save(s)

@@ -22,6 +22,10 @@ type State struct {
 	LeftPanelPercent int `json:"left_panel_percent,omitempty"`
 	// CompactIndent indicates if the file tree uses compact (2-space) indentation
 	CompactIndent bool `json:"compact_indent,omitempty"`
+	// AICommand is the CLI command for the AI assistant (e.g., "claude", "gemini")
+	AICommand string `json:"ai_command,omitempty"`
+	// AIArgs are additional arguments for the AI command
+	AIArgs []string `json:"ai_args,omitempty"`
 }
 
 // DefaultState returns the default state for first run.
