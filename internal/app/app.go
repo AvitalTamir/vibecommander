@@ -40,6 +40,11 @@ type FileChangeMsg struct {
 	Op   fsnotify.Op
 }
 
+// gitCommitFinishedMsg is sent when git commit completes (after GPG, etc.)
+type gitCommitFinishedMsg struct {
+	err error
+}
+
 // Model is the root application model.
 type Model struct {
 	// Child components
@@ -362,6 +367,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case gitRefreshMsg:
 		// Immediate git refresh (after staging/unstaging)
+		return m, m.refreshGitStatus()
+
+	case gitCommitFinishedMsg:
+		// Git commit finished (after GPG passphrase entry, etc.)
+		if msg.err != nil {
+			return m, func() tea.Msg {
+				return ErrorMsg{Err: msg.err}
+			}
+		}
+		// Refresh git status after successful commit
 		return m, m.refreshGitStatus()
 
 	case FileChangeMsg:
@@ -1843,16 +1858,12 @@ func (m Model) handleCommitDialog(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 		m.showCommitDialog = false
 		m.commitInput.Blur()
-		return m, func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			err := m.gitProvider.Commit(ctx, commitMsg)
-			if err != nil {
-				return ErrorMsg{Err: err}
-			}
-			// Trigger git status refresh
-			return gitRefreshMsg{}
-		}
+		// Use tea.ExecProcess to suspend TUI and allow GPG passphrase input
+		cmd := exec.Command("git", "commit", "-m", commitMsg)
+		cmd.Dir = m.workDir
+		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+			return gitCommitFinishedMsg{err: err}
+		})
 	}
 
 	// Pass all other keys to textinput
