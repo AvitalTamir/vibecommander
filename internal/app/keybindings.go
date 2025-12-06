@@ -32,6 +32,7 @@ type KeyMap struct {
 
 	// AI
 	LaunchAI key.Binding
+	SelectAI key.Binding
 
 	// Theme
 	CycleTheme key.Binding
@@ -125,6 +126,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("alt+a", "å"), // å = Option+a on Mac
 			key.WithHelp("M-a", "launch AI"),
 		),
+		SelectAI: key.NewBinding(
+			key.WithKeys("alt+s", "ß"), // ß = Option+s on Mac
+			key.WithHelp("M-s", "select AI"),
+		),
 
 		// Theme
 		CycleTheme: key.NewBinding(
@@ -147,6 +152,6 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.Enter, k.Back, k.Delete},
 		{k.FocusTree, k.FocusContent, k.ToggleMini},
 		{k.ShrinkTree, k.WidenTree},
-		{k.LaunchAI, k.Help, k.Quit},
+		{k.LaunchAI, k.SelectAI, k.Help, k.Quit},
 	}
 }
