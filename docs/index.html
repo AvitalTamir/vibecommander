@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vibe Commander | Vibe Code Like It's 1986</title>
+  <title>Vibe Commander | Time to Ditch Your IDE</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=VT323&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -430,6 +430,37 @@
       font-size: 0.95rem;
     }
 
+    .pitch-text {
+      max-width: 800px;
+      margin: 0 auto 4rem;
+      text-align: center;
+      font-size: 1.2rem;
+      line-height: 1.8;
+    }
+
+    .pitch-text p {
+      margin-bottom: 0.5rem;
+      color: #aaa;
+    }
+
+    .pitch-text p:first-child {
+      color: var(--neon-pink);
+      font-size: 1.3rem;
+    }
+
+    .pitch-text .pitch-highlight {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1.5rem;
+      color: var(--neon-cyan);
+      text-shadow: 0 0 20px var(--neon-cyan);
+      margin: 1.5rem 0;
+    }
+
+    .pitch-text strong {
+      color: var(--sunset-yellow);
+      text-shadow: 0 0 10px var(--sunset-yellow);
+    }
+
     /* Themes Section */
     .themes {
       padding: 8rem 2rem;
@@ -682,7 +713,7 @@
     <div class="logo-container">
       <h1 class="title">Vibe Commander</h1>
       <p class="subtitle">Interactive Vibe Environment</p>
-      <p class="tagline">// VIBE CODE LIKE IT'S 1986 //</p>
+      <p class="tagline">// TIME TO DITCH YOUR IDE //</p>
     </div>
 
     <div class="cta-container">
@@ -705,45 +736,52 @@
     </div>
   </section>
 
-  <!-- Features Section -->
+  <!-- Pitch Section -->
   <section class="features">
-    <h2 class="section-title">/ / THE SETUP / /</h2>
+    <h2 class="section-title">/ / WHY IVE > IDE / /</h2>
+
+    <div class="pitch-text fade-up">
+      <p>Cursor, Windsurf, Antigravity — they're all just IDEs with an AI bolted on.</p>
+      <p>Still Electron. Still bloated. Still eating your RAM for breakfast.</p>
+      <p class="pitch-highlight">Vibe Commander is different.</p>
+      <p>It's not an IDE with AI. It's an <strong>IVE</strong> — built from scratch for the age of AI-assisted coding. Lightweight. Terminal-native. Zero bullshit.</p>
+    </div>
 
     <div class="features-grid">
       <div class="feature-card fade-up">
-        <div class="feature-icon">📁</div>
-        <h3 class="feature-title">File Tree</h3>
-        <p class="feature-desc">Browse your project with git status baked in. Green for staged, yellow for modified, purple for untracked. No guessing.</p>
-      </div>
-
-      <div class="feature-card fade-up">
-        <div class="feature-icon">👁️</div>
-        <h3 class="feature-title">Code Viewer</h3>
-        <p class="feature-desc">Syntax-highlighted preview with regex search. Diff view for modified files. See what changed without leaving the flow.</p>
+        <div class="feature-icon">⚡</div>
+        <h3 class="feature-title">Single Binary, Zero Drama</h3>
+        <p class="feature-desc">Your IDE needs 20GB of RAM and a coffee break to boot. This is one binary that launches before you finish blinking.</p>
       </div>
 
       <div class="feature-card fade-up">
         <div class="feature-icon">⌨️</div>
-        <h3 class="feature-title">Integrated Terminal</h3>
-        <p class="feature-desc">A real shell, not a toy. Run tests, git commands, or fire up your AI assistant. Everything in one tab.</p>
+        <h3 class="feature-title">Terminal-Native</h3>
+        <p class="feature-desc">You already live in the terminal. Why leave it to write code? File tree, code viewer, shell — all in one place.</p>
       </div>
 
       <div class="feature-card fade-up">
         <div class="feature-icon">🤖</div>
-        <h3 class="feature-title">AI Assistant Ready</h3>
-        <p class="feature-desc">Built for Claude, Gemini, Codex, or bring your own CLI assistant. Press Alt+A and start vibing.</p>
+        <h3 class="feature-title">AI-First, Not AI-Bolted</h3>
+        <p class="feature-desc">Built for Claude, Gemini, Codex, or whatever CLI assistant you prefer. Press Alt+A and start vibing. No plugins. No extensions. It just works.</p>
+      </div>
+
+      <div class="feature-card fade-up">
+        <div class="feature-icon">📊</div>
+        <h3 class="feature-title">Git Baked In</h3>
+        <p class="feature-desc">File tree shows git status at a glance. Green for staged, yellow for modified, purple for untracked. Diff view built in. No plugins required.</p>
+      </div>
+
+      <div class="feature-card fade-up">
+        <div class="feature-icon">🔍</div>
+        <h3 class="feature-title">Code Viewer That Doesn't Suck</h3>
+        <p class="feature-desc">Syntax highlighting. Regex search. Diff view for modified files. See what changed without context-switching.</p>
       </div>
 
       <div class="feature-card fade-up">
         <div class="feature-icon">🎨</div>
-        <h3 class="feature-title">5 Sick Themes</h3>
-        <p class="feature-desc">From synthwave to gothic. Your terminal should match your aesthetic. Cycle with Alt+T.</p>
-      </div>
-
-      <div class="feature-card fade-up">
-        <div class="feature-icon">🪶</div>
-        <h3 class="feature-title">Featherweight</h3>
-        <p class="feature-desc">Your IDE eats 20GB of RAM for breakfast. This is a single binary that starts before you finish blinking.</p>
+        <h3 class="feature-title">5 Themes Because You Have Taste</h3>
+        <p class="feature-desc">Your terminal should match your aesthetic. From synthwave to gothic. Cycle with Alt+T.</p>
       </div>
 
     </div>
@@ -806,7 +844,7 @@
   <!-- Footer -->
   <footer>
     <div class="footer-content">
-      <p class="footer-tagline">100% Vibes, 0% Human Slop ✨</p>
+      <p class="footer-tagline">100% Vibe. 0% Human Slop.</p>
 
       <div class="footer-links">
         <a href="https://github.com/AvitalTamir/vibecommander">GitHub</a>

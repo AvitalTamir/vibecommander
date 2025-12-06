@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/tabs-who%20needs%20em-purple?style=flat-square" alt="Tabs: Who needs em">
 </p>
 
-<img width="1512" height="935" alt="Screenshot 2025-12-05 at 13 16 37" src="https://github.com/user-attachments/assets/8be2e2f0-db77-4787-b888-d30935c3c41f" />
+<img width="1512" alt="Vibe Commander Screenshot" src="docs/screenshot.png" />
 
 # Vibe Commander
 
