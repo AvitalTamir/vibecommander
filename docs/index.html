@@ -3,19 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vibe Commander | Time to Ditch Your IDE</title>
+  <title>Vibe Commander | Terminal-Native AI Development Environment</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=VT323&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
-      --neon-pink: #ff2d95;
-      --neon-cyan: #00f5ff;
-      --neon-purple: #b829dd;
-      --deep-purple: #0a0a1a;
-      --grid-purple: #1a1a3a;
-      --sunset-orange: #ff6b35;
-      --sunset-yellow: #ffd23f;
+      --bg-primary: #0a0a0b;
+      --bg-secondary: #111113;
+      --bg-tertiary: #18181b;
+      --bg-card: #1c1c1f;
+      --border: #27272a;
+      --border-hover: #3f3f46;
+      --text-primary: #fafafa;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+      --cyan: #00f5ff;
+      --pink: #ff2d95;
+      --accent: #00f5ff;
+      --accent-hover: #ff2d95;
+      --accent-subtle: rgba(0, 245, 255, 0.1);
+      --green: #22c55e;
+      --yellow: #eab308;
     }
 
     * {
@@ -29,860 +38,997 @@
     }
 
     body {
-      font-family: 'Space Mono', monospace;
-      background: var(--deep-purple);
-      color: #fff;
-      overflow-x: hidden;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
       line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* Scanline overlay */
-    body::before {
-      content: '';
+    /* Navigation */
+    nav {
       position: fixed;
       top: 0;
       left: 0;
-      width: 100%;
-      height: 100%;
-      background: repeating-linear-gradient(
-        0deg,
-        rgba(0,0,0,0.15) 0px,
-        rgba(0,0,0,0.15) 1px,
-        transparent 1px,
-        transparent 2px
-      );
-      pointer-events: none;
-      z-index: 1000;
-    }
-
-    /* CRT flicker */
-    @keyframes flicker {
-      0% { opacity: 0.97; }
-      5% { opacity: 0.95; }
-      10% { opacity: 0.97; }
-      15% { opacity: 0.94; }
-      20% { opacity: 0.98; }
-      50% { opacity: 0.96; }
-      80% { opacity: 0.97; }
-      90% { opacity: 0.94; }
-      100% { opacity: 0.97; }
-    }
-
-    body::after {
-      content: '';
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.3) 100%);
-      pointer-events: none;
-      z-index: 999;
-      animation: flicker 0.15s infinite;
-    }
-
-    /* Hero Section */
-    .hero {
-      min-height: 100vh;
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 2rem;
-      overflow: hidden;
-    }
-
-    /* Retro grid */
-    .grid-bg {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      width: 100%;
-      height: 60%;
-      background:
-        linear-gradient(to bottom, transparent 0%, var(--deep-purple) 100%),
-        linear-gradient(90deg, var(--neon-pink) 1px, transparent 1px),
-        linear-gradient(0deg, var(--neon-pink) 1px, transparent 1px);
-      background-size: 100% 100%, 60px 60px, 60px 60px;
-      transform: perspective(500px) rotateX(60deg);
-      transform-origin: bottom;
-      opacity: 0.3;
-    }
-
-    /* Sun */
-    .sun {
-      position: absolute;
-      bottom: 20%;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 400px;
-      height: 400px;
-      border-radius: 50%;
-      background: linear-gradient(180deg,
-        var(--sunset-yellow) 0%,
-        var(--sunset-orange) 40%,
-        var(--neon-pink) 70%,
-        var(--neon-purple) 100%
-      );
-      box-shadow:
-        0 0 100px var(--sunset-orange),
-        0 0 200px var(--neon-pink);
-      clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%);
-    }
-
-    .sun::before {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 0;
-      width: 100%;
-      height: 50%;
-      background: repeating-linear-gradient(
-        0deg,
-        transparent 0px,
-        transparent 8px,
-        var(--deep-purple) 8px,
-        var(--deep-purple) 20px
-      );
-    }
-
-    /* Mountains silhouette */
-    .mountains {
-      position: absolute;
-      bottom: 15%;
-      left: 0;
-      width: 100%;
-      height: 200px;
-      background: var(--deep-purple);
-      clip-path: polygon(
-        0% 100%,
-        0% 60%,
-        10% 40%,
-        20% 65%,
-        30% 35%,
-        45% 55%,
-        50% 25%,
-        60% 50%,
-        70% 30%,
-        80% 55%,
-        90% 40%,
-        100% 70%,
-        100% 100%
-      );
-    }
-
-    /* Logo & Title */
-    .logo-container {
-      text-align: center;
-      z-index: 10;
-      margin-bottom: 2rem;
-    }
-
-    @keyframes glowPulse {
-      0%, 100% {
-        text-shadow:
-          0 0 10px var(--neon-cyan),
-          0 0 20px var(--neon-cyan),
-          0 0 40px var(--neon-cyan),
-          0 0 80px var(--neon-pink);
-      }
-      50% {
-        text-shadow:
-          0 0 20px var(--neon-cyan),
-          0 0 40px var(--neon-cyan),
-          0 0 60px var(--neon-cyan),
-          0 0 100px var(--neon-pink);
-      }
-    }
-
-    .title {
-      font-family: 'Orbitron', sans-serif;
-      font-size: clamp(3rem, 10vw, 8rem);
-      font-weight: 900;
-      color: #fff;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      animation: glowPulse 2s ease-in-out infinite;
-      margin-bottom: 0.5rem;
-    }
-
-    .subtitle {
-      font-family: 'VT323', monospace;
-      font-size: clamp(1.5rem, 4vw, 2.5rem);
-      color: var(--neon-pink);
-      text-shadow: 0 0 10px var(--neon-pink);
-      letter-spacing: 0.3em;
-    }
-
-    .tagline {
-      font-family: 'Space Mono', monospace;
-      font-size: 1.1rem;
-      color: var(--neon-cyan);
-      margin-top: 2rem;
+      right: 0;
+      z-index: 100;
       padding: 1rem 2rem;
-      border: 2px solid var(--neon-cyan);
-      background: rgba(0, 245, 255, 0.1);
-      text-shadow: 0 0 10px var(--neon-cyan);
+      background: rgba(10, 10, 11, 0.8);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
     }
 
-    /* CTA Buttons */
-    .cta-container {
+    .nav-content {
+      max-width: 1200px;
+      margin: 0 auto;
       display: flex;
-      gap: 2rem;
-      margin-top: 3rem;
-      z-index: 10;
-      flex-wrap: wrap;
-      justify-content: center;
+      justify-content: space-between;
+      align-items: center;
     }
 
-    .btn {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 1rem;
+    .nav-logo {
       font-weight: 700;
-      padding: 1rem 2.5rem;
-      border: none;
-      cursor: pointer;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      position: relative;
-      overflow: hidden;
-      transition: all 0.3s ease;
+      font-size: 1.25rem;
+      color: var(--text-primary);
       text-decoration: none;
-    }
-
-    .btn-primary {
-      background: linear-gradient(135deg, var(--neon-pink), var(--neon-purple));
-      color: #fff;
-      box-shadow:
-        0 0 20px var(--neon-pink),
-        inset 0 0 20px rgba(255,255,255,0.1);
-    }
-
-    .btn-primary:hover {
-      transform: translateY(-3px);
-      box-shadow:
-        0 0 40px var(--neon-pink),
-        0 10px 40px rgba(255, 45, 149, 0.4),
-        inset 0 0 20px rgba(255,255,255,0.2);
-    }
-
-    .btn-secondary {
-      background: transparent;
-      color: var(--neon-cyan);
-      border: 2px solid var(--neon-cyan);
-      box-shadow: 0 0 10px var(--neon-cyan);
-    }
-
-    .btn-secondary:hover {
-      background: var(--neon-cyan);
-      color: var(--deep-purple);
-      box-shadow: 0 0 30px var(--neon-cyan);
-    }
-
-    /* Terminal preview */
-    .terminal-preview {
-      margin-top: 4rem;
-      z-index: 10;
-      width: 100%;
-      max-width: 900px;
-    }
-
-    .terminal-window {
-      background: rgba(10, 10, 26, 0.95);
-      border: 2px solid var(--neon-purple);
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow:
-        0 0 30px rgba(184, 41, 221, 0.3),
-        inset 0 0 60px rgba(184, 41, 221, 0.1);
-    }
-
-    .terminal-header {
-      background: linear-gradient(90deg, var(--neon-purple), var(--neon-pink));
-      padding: 0.75rem 1rem;
       display: flex;
       align-items: center;
       gap: 0.5rem;
     }
 
-    .terminal-dot {
+    .nav-logo-icon {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, var(--cyan), var(--pink));
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.875rem;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover {
+      color: var(--text-primary);
+    }
+
+    .nav-cta {
+      background: var(--text-primary);
+      color: var(--bg-primary);
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+
+    .nav-cta:hover {
+      opacity: 0.9;
+    }
+
+    /* Hero */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 8rem 2rem 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-gradient {
+      position: absolute;
+      top: -50%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 150%;
+      height: 100%;
+      background:
+        radial-gradient(ellipse at 30% 50%, rgba(0, 245, 255, 0.12) 0%, transparent 50%),
+        radial-gradient(ellipse at 70% 50%, rgba(255, 45, 149, 0.12) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
+    .hero-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--accent-subtle);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      padding: 0.375rem 0.875rem;
+      border-radius: 100px;
+      font-size: 0.8125rem;
+      color: var(--accent-hover);
+      margin-bottom: 1.5rem;
+    }
+
+    .hero-badge-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+    }
+
+    .hero-title {
+      font-size: clamp(2.5rem, 8vw, 4.5rem);
+      font-weight: 700;
+      line-height: 1.1;
+      margin-bottom: 1.5rem;
+      letter-spacing: -0.02em;
+    }
+
+    .hero-title-gradient {
+      background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-subtitle {
+      font-size: 1.25rem;
+      color: var(--text-secondary);
+      max-width: 640px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.7;
+    }
+
+    .hero-cta {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background: var(--text-primary);
+      color: var(--bg-primary);
+    }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-card);
+      border-color: var(--border-hover);
+    }
+
+    .btn-icon {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* Screenshot */
+    .hero-screenshot {
+      margin-top: 4rem;
+      position: relative;
+    }
+
+    .screenshot-wrapper {
+      max-width: 1000px;
+      margin: 0 auto;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--bg-secondary);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.05),
+        0 20px 50px -12px rgba(0,0,0,0.5),
+        0 0 80px -20px rgba(0, 245, 255, 0.2),
+        0 0 80px -20px rgba(255, 45, 149, 0.15);
+    }
+
+    .screenshot-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .screenshot-dot {
       width: 12px;
       height: 12px;
       border-radius: 50%;
     }
 
-    .terminal-dot.red { background: #ff5f56; }
-    .terminal-dot.yellow { background: #ffbd2e; }
-    .terminal-dot.green { background: #27ca40; }
+    .screenshot-dot.red { background: #ff5f57; }
+    .screenshot-dot.yellow { background: #febc2e; }
+    .screenshot-dot.green { background: #28c840; }
 
-    .terminal-title {
+    .screenshot-title {
       flex: 1;
       text-align: center;
-      font-family: 'VT323', monospace;
-      font-size: 1.2rem;
-      color: #fff;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
     }
 
-    .terminal-body {
-      padding: 1.5rem;
-      font-family: 'VT323', monospace;
-      font-size: 1.3rem;
-      min-height: 300px;
+    .screenshot-img {
+      width: 100%;
+      display: block;
     }
 
-    @keyframes typing {
-      from { width: 0; }
-      to { width: 100%; }
+    /* Install command */
+    .install-preview {
+      max-width: 600px;
+      margin: 3rem auto 0;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
     }
 
-    @keyframes blink {
-      50% { border-color: transparent; }
+    .install-code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
     }
 
-    .terminal-line {
-      margin: 0.5rem 0;
-      opacity: 0;
-      animation: fadeIn 0.3s ease forwards;
+    .install-code span {
+      color: var(--accent-hover);
     }
 
-    .terminal-line:nth-child(1) { animation-delay: 0.2s; }
-    .terminal-line:nth-child(2) { animation-delay: 0.5s; }
-    .terminal-line:nth-child(3) { animation-delay: 0.8s; }
-    .terminal-line:nth-child(4) { animation-delay: 1.1s; }
-    .terminal-line:nth-child(5) { animation-delay: 1.4s; }
-    .terminal-line:nth-child(6) { animation-delay: 1.7s; }
-
-    @keyframes fadeIn {
-      to { opacity: 1; }
+    .copy-btn {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
     }
 
-    .prompt { color: var(--neon-cyan); }
-    .command { color: var(--neon-pink); }
-    .output { color: #888; }
-    .success { color: #27ca40; }
-    .highlight { color: var(--sunset-yellow); }
+    .copy-btn:hover {
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
 
-    /* Features Section */
+    /* Features */
     .features {
       padding: 8rem 2rem;
-      position: relative;
-      background: linear-gradient(180deg, var(--deep-purple) 0%, var(--grid-purple) 100%);
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+    }
+
+    .section-header {
+      max-width: 640px;
+      margin: 0 auto 4rem;
+      text-align: center;
+    }
+
+    .section-label {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 1rem;
     }
 
     .section-title {
-      font-family: 'Orbitron', sans-serif;
-      font-size: clamp(2rem, 5vw, 3.5rem);
-      text-align: center;
-      margin-bottom: 4rem;
-      color: var(--neon-cyan);
-      text-shadow: 0 0 30px var(--neon-cyan);
+      font-size: clamp(2rem, 5vw, 2.75rem);
+      font-weight: 700;
+      margin-bottom: 1rem;
+      letter-spacing: -0.02em;
+    }
+
+    .section-desc {
+      color: var(--text-secondary);
+      font-size: 1.125rem;
     }
 
     .features-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 2rem;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
       max-width: 1200px;
       margin: 0 auto;
     }
 
     .feature-card {
-      background: rgba(26, 26, 58, 0.8);
-      border: 1px solid var(--neon-purple);
-      padding: 2rem;
-      position: relative;
-      overflow: hidden;
-      transition: all 0.3s ease;
-    }
-
-    .feature-card::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 3px;
-      background: linear-gradient(90deg, var(--neon-pink), var(--neon-cyan));
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.75rem;
+      transition: all 0.2s;
     }
 
     .feature-card:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 20px 40px rgba(184, 41, 221, 0.2);
-      border-color: var(--neon-pink);
+      border-color: var(--border-hover);
+      transform: translateY(-2px);
     }
 
     .feature-icon {
-      font-size: 3rem;
+      width: 40px;
+      height: 40px;
+      background: var(--accent-subtle);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       margin-bottom: 1rem;
+      font-size: 1.25rem;
     }
 
     .feature-title {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 1.3rem;
-      color: var(--neon-pink);
-      margin-bottom: 1rem;
-      text-shadow: 0 0 10px var(--neon-pink);
+      font-size: 1.0625rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
     }
 
     .feature-desc {
-      color: #aaa;
-      font-size: 0.95rem;
+      color: var(--text-secondary);
+      font-size: 0.9375rem;
+      line-height: 1.6;
     }
 
-    .pitch-text {
-      max-width: 800px;
-      margin: 0 auto 4rem;
-      text-align: center;
-      font-size: 1.2rem;
-      line-height: 1.8;
-    }
-
-    .pitch-text p {
-      margin-bottom: 0.5rem;
-      color: #aaa;
-    }
-
-    .pitch-text p:first-child {
-      color: var(--neon-pink);
-      font-size: 1.3rem;
-    }
-
-    .pitch-text .pitch-highlight {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 1.5rem;
-      color: var(--neon-cyan);
-      text-shadow: 0 0 20px var(--neon-cyan);
-      margin: 1.5rem 0;
-    }
-
-    .pitch-text strong {
-      color: var(--sunset-yellow);
-      text-shadow: 0 0 10px var(--sunset-yellow);
-    }
-
-    /* Themes Section */
-    .themes {
+    /* Comparison */
+    .comparison {
       padding: 8rem 2rem;
-      background: var(--deep-purple);
+      border-top: 1px solid var(--border);
+    }
+
+    .comparison-content {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    @media (max-width: 640px) {
+      .comparison-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .comparison-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+    }
+
+    .comparison-card.highlight {
+      border-color: var(--cyan);
+      background: linear-gradient(135deg, rgba(0, 245, 255, 0.05) 0%, transparent 100%);
+    }
+
+    .comparison-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .comparison-card.highlight .comparison-label {
+      color: var(--accent);
+    }
+
+    .comparison-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+    }
+
+    .comparison-list {
+      list-style: none;
+    }
+
+    .comparison-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 0.5rem 0;
+      color: var(--text-secondary);
+      font-size: 0.9375rem;
+    }
+
+    .comparison-list .icon {
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .comparison-list .icon-x {
+      color: var(--text-muted);
+    }
+
+    .comparison-list .icon-check {
+      color: var(--green);
+    }
+
+    /* Keybindings */
+    .keybindings {
+      padding: 8rem 2rem;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+    }
+
+    .keybindings-content {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .keybindings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    .keybinding-group h3 {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 1rem;
+    }
+
+    .keybinding-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.625rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .keybinding-item:last-child {
+      border-bottom: none;
+    }
+
+    .keybinding-action {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+    }
+
+    .keybinding-keys {
+      display: flex;
+      gap: 0.25rem;
+    }
+
+    kbd {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.25rem 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--text-primary);
+    }
+
+    /* CTA */
+    .cta {
+      padding: 8rem 2rem;
+      text-align: center;
+      border-top: 1px solid var(--border);
       position: relative;
+      overflow: hidden;
     }
 
-    .themes::before {
-      content: '';
+    .cta-gradient {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 150%;
+      height: 60%;
       background:
-        radial-gradient(ellipse at 20% 50%, rgba(184, 41, 221, 0.1) 0%, transparent 50%),
-        radial-gradient(ellipse at 80% 50%, rgba(255, 45, 149, 0.1) 0%, transparent 50%);
+        radial-gradient(ellipse at 40% 80%, rgba(0, 245, 255, 0.1) 0%, transparent 50%),
+        radial-gradient(ellipse at 60% 80%, rgba(255, 45, 149, 0.1) 0%, transparent 50%);
+      pointer-events: none;
     }
 
-    .themes-container {
-      max-width: 1000px;
+    .cta-content {
+      max-width: 640px;
       margin: 0 auto;
       position: relative;
       z-index: 1;
     }
 
-    .theme-showcase {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 1.5rem;
-      margin-top: 3rem;
+    .cta-title {
+      font-size: clamp(2rem, 5vw, 2.5rem);
+      font-weight: 700;
+      margin-bottom: 1rem;
     }
 
-    .theme-card {
-      padding: 1.5rem;
-      border-radius: 4px;
-      text-align: center;
-      transition: all 0.3s ease;
-      cursor: pointer;
+    .cta-desc {
+      color: var(--text-secondary);
+      font-size: 1.125rem;
+      margin-bottom: 2rem;
     }
 
-    .theme-card:hover {
-      transform: scale(1.05);
+    .cta-install {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9375rem;
     }
 
-    .theme-miami {
-      background: linear-gradient(135deg, #1a0a2e 0%, #16213e 100%);
-      border: 2px solid var(--neon-pink);
-      box-shadow: 0 0 20px rgba(255, 45, 149, 0.3);
+    .cta-install .prompt {
+      color: var(--text-muted);
     }
 
-    .theme-pina {
-      background: linear-gradient(135deg, #2d1b00 0%, #1a3a1a 100%);
-      border: 2px solid #ffd23f;
-      box-shadow: 0 0 20px rgba(255, 210, 63, 0.3);
-    }
-
-    .theme-lobster {
-      background: linear-gradient(135deg, #1a0a0a 0%, #2e1a1a 100%);
-      border: 2px solid #ff6b6b;
-      box-shadow: 0 0 20px rgba(255, 107, 107, 0.3);
-    }
-
-    .theme-jungle {
-      background: linear-gradient(135deg, #0a1a0a 0%, #1a2e1a 100%);
-      border: 2px solid #4ecdc4;
-      box-shadow: 0 0 20px rgba(78, 205, 196, 0.3);
-    }
-
-    .theme-vampire {
-      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
-      border: 2px solid #a855f7;
-      box-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
-    }
-
-    .theme-name {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 0.9rem;
-      margin-top: 1rem;
-      letter-spacing: 0.1em;
-    }
-
-    .theme-vibe {
-      font-family: 'VT323', monospace;
-      font-size: 1rem;
-      color: #888;
-      margin-top: 0.5rem;
-    }
-
-    /* Install Section */
-    .install {
-      padding: 8rem 2rem;
-      background: var(--grid-purple);
-      text-align: center;
-    }
-
-    .install-box {
-      max-width: 700px;
-      margin: 3rem auto 0;
-      background: rgba(10, 10, 26, 0.9);
-      border: 2px solid var(--neon-cyan);
-      padding: 2rem;
-      position: relative;
-    }
-
-    .install-box::before {
-      content: 'INSTALL';
-      position: absolute;
-      top: -12px;
-      left: 20px;
-      background: var(--grid-purple);
-      padding: 0 1rem;
-      font-family: 'Orbitron', sans-serif;
-      font-size: 0.8rem;
-      color: var(--neon-cyan);
-      letter-spacing: 0.2em;
-    }
-
-    .install-code {
-      font-family: 'VT323', monospace;
-      font-size: 1.5rem;
-      color: var(--neon-pink);
-      text-shadow: 0 0 10px var(--neon-pink);
-      margin: 1rem 0;
-      overflow-x: auto;
-      white-space: nowrap;
-      padding: 0.5rem;
-      scrollbar-width: thin;
-      scrollbar-color: var(--neon-pink) transparent;
-    }
-
-    .install-code::-webkit-scrollbar {
-      height: 6px;
-    }
-
-    .install-code::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .install-code::-webkit-scrollbar-thumb {
-      background: var(--neon-pink);
-      border-radius: 3px;
-    }
-
-    .install-or {
-      color: #666;
-      margin: 1.5rem 0;
-      font-family: 'Space Mono', monospace;
-    }
-
-    .install-alt {
-      font-family: 'VT323', monospace;
-      font-size: 1.2rem;
-      color: var(--neon-cyan);
+    .cta-install .command {
+      color: var(--accent-hover);
     }
 
     /* Footer */
     footer {
-      padding: 4rem 2rem;
-      background: var(--deep-purple);
-      border-top: 1px solid var(--neon-purple);
-      text-align: center;
+      padding: 3rem 2rem;
+      border-top: 1px solid var(--border);
     }
 
     .footer-content {
-      max-width: 800px;
+      max-width: 1200px;
       margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
     }
 
-    .footer-tagline {
-      font-family: 'VT323', monospace;
-      font-size: 1.5rem;
-      color: var(--neon-pink);
-      margin-bottom: 2rem;
+    .footer-left {
+      color: var(--text-muted);
+      font-size: 0.875rem;
     }
 
     .footer-links {
       display: flex;
-      justify-content: center;
-      gap: 2rem;
-      margin-bottom: 2rem;
-      flex-wrap: wrap;
+      gap: 1.5rem;
     }
 
     .footer-links a {
-      color: var(--neon-cyan);
+      color: var(--text-secondary);
       text-decoration: none;
-      font-family: 'Space Mono', monospace;
-      transition: all 0.3s ease;
+      font-size: 0.875rem;
+      transition: color 0.2s;
     }
 
     .footer-links a:hover {
-      color: var(--neon-pink);
-      text-shadow: 0 0 10px var(--neon-pink);
-    }
-
-    .footer-copy {
-      color: #666;
-      font-size: 0.9rem;
-    }
-
-    .footer-copy .heart {
-      color: var(--neon-pink);
+      color: var(--text-primary);
     }
 
     /* Responsive */
     @media (max-width: 768px) {
-      .sun {
-        width: 250px;
-        height: 250px;
-        bottom: 25%;
-      }
-
-      .terminal-body {
-        font-size: 1rem;
+      nav {
         padding: 1rem;
       }
 
-      .cta-container {
+      .nav-links {
+        display: none;
+      }
+
+      .hero {
+        padding: 6rem 1.5rem 3rem;
+      }
+
+      .install-preview {
         flex-direction: column;
-        align-items: center;
+        text-align: center;
       }
 
-      .btn {
-        width: 100%;
-        max-width: 280px;
+      .features, .comparison, .keybindings, .cta {
+        padding: 5rem 1.5rem;
       }
-    }
 
-    /* Scroll animations */
-    .fade-up {
-      opacity: 0;
-      transform: translateY(30px);
-      transition: all 0.6s ease;
-    }
-
-    .fade-up.visible {
-      opacity: 1;
-      transform: translateY(0);
+      .footer-content {
+        flex-direction: column;
+        text-align: center;
+      }
     }
   </style>
 </head>
 <body>
-  <!-- Hero Section -->
+  <nav>
+    <div class="nav-content">
+      <a href="#" class="nav-logo">
+        <span class="nav-logo-icon">vc</span>
+        Vibe Commander
+      </a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#keybindings">Keybindings</a>
+        <a href="https://github.com/AvitalTamir/vibecommander">GitHub</a>
+        <a href="https://github.com/AvitalTamir/vibecommander/releases/latest" class="nav-cta">Download</a>
+      </div>
+    </div>
+  </nav>
+
   <section class="hero">
-    <div class="grid-bg"></div>
-    <div class="sun"></div>
-    <div class="mountains"></div>
+    <div class="hero-gradient"></div>
+    <div class="hero-content">
+      <div class="hero-badge">
+        <span class="hero-badge-dot"></span>
+        Built for AI-assisted development
+      </div>
+      <h1 class="hero-title">
+        <span class="hero-title-gradient">Time to ditch your IDE</span>
+      </h1>
+      <p class="hero-subtitle">
+        Your IDE needs 20GB of RAM and a coffee break to boot.<br>
+        This is one binary that launches before you finish blinking.<br>
+        0% Human Slop. 100% Vibes.
+      </p>
+      <div class="hero-cta">
+        <a href="https://github.com/AvitalTamir/vibecommander/releases/latest" class="btn btn-primary">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Download
+        </a>
+        <a href="https://github.com/AvitalTamir/vibecommander" class="btn btn-secondary">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+          </svg>
+          View on GitHub
+        </a>
+      </div>
 
-    <div class="logo-container">
-      <h1 class="title">Vibe Commander</h1>
-      <p class="subtitle">Interactive Vibe Environment</p>
-      <p class="tagline">// TIME TO DITCH YOUR IDE //</p>
-    </div>
+      <div class="install-preview">
+        <code class="install-code"><span>$</span> go install github.com/avitaltamir/vibecommander/cmd/vc@latest</code>
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('go install github.com/avitaltamir/vibecommander/cmd/vc@latest')">Copy</button>
+      </div>
 
-    <div class="cta-container">
-      <a href="https://github.com/AvitalTamir/vibecommander/releases/latest" class="btn btn-primary">Download Now</a>
-      <a href="https://github.com/AvitalTamir/vibecommander" class="btn btn-secondary">View Source</a>
-    </div>
-
-    <div class="terminal-preview">
-      <div class="terminal-window">
-        <div class="terminal-header">
-          <span class="terminal-dot red"></span>
-          <span class="terminal-dot yellow"></span>
-          <span class="terminal-dot green"></span>
-          <span class="terminal-title">vc</span>
-        </div>
-        <div class="terminal-body" style="padding: 0;">
-          <img src="screenshot.png" alt="Vibe Commander Screenshot" style="width: 100%; display: block;">
+      <div class="hero-screenshot">
+        <div class="screenshot-wrapper">
+          <div class="screenshot-header">
+            <span class="screenshot-dot red"></span>
+            <span class="screenshot-dot yellow"></span>
+            <span class="screenshot-dot green"></span>
+            <span class="screenshot-title">vc</span>
+          </div>
+          <img src="screenshot.png" alt="Vibe Commander" class="screenshot-img">
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Pitch Section -->
-  <section class="features">
-    <h2 class="section-title">/ / WHY IVE > IDE / /</h2>
-
-    <div class="pitch-text fade-up">
-      <p>Cursor, Windsurf, Antigravity — they're all just IDEs with an AI bolted on.</p>
-      <p>Still Electron. Still bloated. Still eating your RAM for breakfast.</p>
-      <p class="pitch-highlight">Vibe Commander is different.</p>
-      <p>It's not an IDE with AI. It's an <strong>IVE</strong> — built from scratch for the age of AI-assisted coding. Lightweight. Terminal-native. Zero bullshit.</p>
+  <section class="features" id="features">
+    <div class="section-header">
+      <p class="section-label">Features</p>
+      <h2 class="section-title">Everything you need, nothing you don't</h2>
+      <p class="section-desc">Built from scratch for AI-assisted workflows. No plugins required.</p>
     </div>
 
     <div class="features-grid">
-      <div class="feature-card fade-up">
-        <div class="feature-icon">⚡</div>
-        <h3 class="feature-title">Single Binary, Zero Drama</h3>
-        <p class="feature-desc">Your IDE needs 20GB of RAM and a coffee break to boot. This is one binary that launches before you finish blinking.</p>
-      </div>
-
-      <div class="feature-card fade-up">
-        <div class="feature-icon">⌨️</div>
-        <h3 class="feature-title">Terminal-Native</h3>
-        <p class="feature-desc">You already live in the terminal. Why leave it to write code? File tree, code viewer, shell — all in one place.</p>
-      </div>
-
-      <div class="feature-card fade-up">
-        <div class="feature-icon">🤖</div>
-        <h3 class="feature-title">AI-First, Not AI-Bolted</h3>
-        <p class="feature-desc">Built for Claude, Gemini, Codex, or whatever CLI assistant you prefer. Press Alt+A and start vibing. No plugins. No extensions. It just works.</p>
-      </div>
-
-      <div class="feature-card fade-up">
-        <div class="feature-icon">📊</div>
-        <h3 class="feature-title">Git Baked In</h3>
-        <p class="feature-desc">File tree shows git status at a glance. Green for staged, yellow for modified, purple for untracked. Diff view built in. No plugins required.</p>
-      </div>
-
-      <div class="feature-card fade-up">
-        <div class="feature-icon">🔍</div>
-        <h3 class="feature-title">Code Viewer That Doesn't Suck</h3>
-        <p class="feature-desc">Syntax highlighting. Regex search. Diff view for modified files. See what changed without context-switching.</p>
-      </div>
-
-      <div class="feature-card fade-up">
-        <div class="feature-icon">🎨</div>
-        <h3 class="feature-title">5 Themes Because You Have Taste</h3>
-        <p class="feature-desc">Your terminal should match your aesthetic. From synthwave to gothic. Cycle with Alt+T.</p>
-      </div>
-
-    </div>
-  </section>
-
-  <!-- Themes Section -->
-  <section class="themes">
-    <div class="themes-container">
-      <h2 class="section-title">/ / CHOOSE YOUR VIBE / /</h2>
-
-      <div class="theme-showcase">
-        <div class="theme-card theme-miami fade-up">
-          <div style="font-size: 2.5rem;">🌴</div>
-          <p class="theme-name" style="color: var(--neon-pink);">Midnight Miami</p>
-          <p class="theme-vibe">Synthwave dreams</p>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+          </svg>
         </div>
+        <h3 class="feature-title">Instant startup</h3>
+        <p class="feature-desc">Single binary, no dependencies. Launches faster than your IDE can even think about it.</p>
+      </div>
 
-        <div class="theme-card theme-pina fade-up">
-          <div style="font-size: 2.5rem;">🍍</div>
-          <p class="theme-name" style="color: #ffd23f;">Piña Colada</p>
-          <p class="theme-vibe">Vacation mode</p>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M3 9h18"/>
+            <path d="M9 21V9"/>
+          </svg>
         </div>
+        <h3 class="feature-title">Dual-pane layout</h3>
+        <p class="feature-desc">File tree on the left, code viewer on the right. Resize with a keystroke. Go fullscreen when you need focus.</p>
+      </div>
 
-        <div class="theme-card theme-lobster fade-up">
-          <div style="font-size: 2.5rem;">🦞</div>
-          <p class="theme-name" style="color: #ff6b6b;">Lobster Boy</p>
-          <p class="theme-vibe">Classy crustacean</p>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 1v6m0 6v10"/>
+            <path d="M21 12h-6m-6 0H1"/>
+          </svg>
         </div>
+        <h3 class="feature-title">AI-first design</h3>
+        <p class="feature-desc">Press Alt+A to launch Claude, Gemini, or any CLI assistant. Full terminal emulation built in.</p>
+      </div>
 
-        <div class="theme-card theme-jungle fade-up">
-          <div style="font-size: 2.5rem;">🌿</div>
-          <p class="theme-name" style="color: #4ecdc4;">Feral Jungle</p>
-          <p class="theme-vibe">Touch grass</p>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/>
+          </svg>
         </div>
+        <h3 class="feature-title">Git integration</h3>
+        <p class="feature-desc">See file status at a glance. Stage, unstage, and commit without leaving the app. Inline diff viewer included.</p>
+      </div>
 
-        <div class="theme-card theme-vampire fade-up">
-          <div style="font-size: 2.5rem;">🦇</div>
-          <p class="theme-name" style="color: #a855f7;">Vampire Weekend</p>
-          <p class="theme-vibe">Dark academia</p>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="M21 21l-4.35-4.35"/>
+          </svg>
         </div>
+        <h3 class="feature-title">Fast search</h3>
+        <p class="feature-desc">Fuzzy file filtering. Regex search in the code viewer. Find what you need without context switching.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2">
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/>
+          </svg>
+        </div>
+        <h3 class="feature-title">5 color themes</h3>
+        <p class="feature-desc">From synthwave to minimal. Cycle through with Alt+T until you find your vibe.</p>
       </div>
     </div>
   </section>
 
-  <!-- Install Section -->
-  <section class="install">
-    <h2 class="section-title">/ / GET STARTED / /</h2>
+  <section class="comparison">
+    <div class="comparison-content">
+      <div class="section-header">
+        <p class="section-label">Why switch</p>
+        <h2 class="section-title">IVE vs IDE</h2>
+        <p class="section-desc">Traditional IDEs weren't built for AI. We were.</p>
+      </div>
 
-    <div class="install-box fade-up">
-      <p class="install-code">go install github.com/avitaltamir/vibecommander/cmd/vc@latest</p>
-      <p class="install-or">— or —</p>
-      <p class="install-alt">Download binary from <a href="https://github.com/AvitalTamir/vibecommander/releases/latest" style="color: var(--neon-pink);">releases</a></p>
-    </div>
+      <div class="comparison-grid">
+        <div class="comparison-card">
+          <p class="comparison-label">Traditional IDE</p>
+          <p class="comparison-title">Built for humans, AI bolted on</p>
+          <ul class="comparison-list">
+            <li>
+              <span class="icon icon-x">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </span>
+              Heavy Electron apps eating RAM
+            </li>
+            <li>
+              <span class="icon icon-x">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </span>
+              Extensions, plugins, and config files everywhere
+            </li>
+            <li>
+              <span class="icon icon-x">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </span>
+              Slow startup times
+            </li>
+            <li>
+              <span class="icon icon-x">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </span>
+              Context switching between terminal and editor
+            </li>
+          </ul>
+        </div>
 
-    <div style="margin-top: 3rem;">
-      <a href="https://github.com/AvitalTamir/vibecommander" class="btn btn-primary">View on GitHub</a>
+        <div class="comparison-card highlight">
+          <p class="comparison-label">Vibe Commander</p>
+          <p class="comparison-title">Built for AI from day one</p>
+          <ul class="comparison-list">
+            <li>
+              <span class="icon icon-check">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </span>
+              Single lightweight binary
+            </li>
+            <li>
+              <span class="icon icon-check">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </span>
+              Zero config, works out of the box
+            </li>
+            <li>
+              <span class="icon icon-check">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </span>
+              Instant startup
+            </li>
+            <li>
+              <span class="icon icon-check">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </span>
+              Terminal-native workflow
+            </li>
+          </ul>
+        </div>
+      </div>
     </div>
   </section>
 
-  <!-- Footer -->
+  <section class="keybindings" id="keybindings">
+    <div class="keybindings-content">
+      <div class="section-header">
+        <p class="section-label">Keyboard-first</p>
+        <h2 class="section-title">Everything at your fingertips</h2>
+        <p class="section-desc">Your hands never leave the keyboard. (Mouse works too, we're not monsters.)</p>
+      </div>
+
+      <div class="keybindings-grid">
+        <div class="keybinding-group">
+          <h3>Panels</h3>
+          <div class="keybinding-item">
+            <span class="keybinding-action">File tree</span>
+            <div class="keybinding-keys"><kbd>Alt</kbd><kbd>1</kbd></div>
+          </div>
+          <div class="keybinding-item">
+            <span class="keybinding-action">Content view</span>
+            <div class="keybinding-keys"><kbd>Alt</kbd><kbd>2</kbd></div>
+          </div>
+          <div class="keybinding-item">
+            <span class="keybinding-action">Terminal</span>
+            <div class="keybinding-keys"><kbd>Alt</kbd><kbd>3</kbd></div>
+          </div>
+          <div class="keybinding-item">
+            <span class="keybinding-action">Git panel</span>
+            <div class="keybinding-keys"><kbd>Alt</kbd><kbd>G</kbd></div>
+          </div>
+        </div>
+
+        <div class="keybinding-group">
+          <h3>Navigation</h3>
+          <div class="keybinding-item">
+            <span class="keybinding-action">Up / Down</span>
+            <div class="keybinding-keys"><kbd>k</kbd> <kbd>j</kbd></div>
+          </div>
+          <div class="keybinding-item">
+            <span class="keybinding-action">Collapse / Expand</span>
+            <div class="keybinding-keys"><kbd>h</kbd> <kbd>l</kbd></div>
+          </div>
+          <div class="keybinding-item">
+            <span class="keybinding-action">Search</span>
+            <div class="keybinding-keys"><kbd>/</kbd></div>
+          </div>
+          <div class="keybinding-item">
+            <span class="keybinding-action">Next / Prev match</span>
+            <div class="keybinding-keys"><kbd>n</kbd> <kbd>p</kbd></div>
+          </div>
+        </div>
+
+        <div class="keybinding-group">
+          <h3>AI & Actions</h3>
+          <div class="keybinding-item">
+            <span class="keybinding-action">Launch AI</span>
+            <div class="keybinding-keys"><kbd>Alt</kbd><kbd>A</kbd></div>
+          </div>
+          <div class="keybinding-item">
+            <span class="keybinding-action">Select AI</span>
+            <div class="keybinding-keys"><kbd>Alt</kbd><kbd>S</kbd></div>
+          </div>
+          <div class="keybinding-item">
+            <span class="keybinding-action">Cycle theme</span>
+            <div class="keybinding-keys"><kbd>Alt</kbd><kbd>T</kbd></div>
+          </div>
+          <div class="keybinding-item">
+            <span class="keybinding-action">Toggle help</span>
+            <div class="keybinding-keys"><kbd>Ctrl</kbd><kbd>H</kbd></div>
+          </div>
+        </div>
+
+        <div class="keybinding-group">
+          <h3>Git</h3>
+          <div class="keybinding-item">
+            <span class="keybinding-action">Stage / Unstage</span>
+            <div class="keybinding-keys"><kbd>Space</kbd></div>
+          </div>
+          <div class="keybinding-item">
+            <span class="keybinding-action">Commit</span>
+            <div class="keybinding-keys"><kbd>c</kbd></div>
+          </div>
+          <div class="keybinding-item">
+            <span class="keybinding-action">View diff</span>
+            <div class="keybinding-keys"><kbd>Enter</kbd></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="cta-gradient"></div>
+    <div class="cta-content">
+      <h2 class="cta-title">Ready to upgrade your workflow?</h2>
+      <p class="cta-desc">Install in seconds. No account required. Open source and free forever.</p>
+      <div class="cta-install">
+        <span class="prompt">$</span> <span class="command">go install github.com/avitaltamir/vibecommander/cmd/vc@latest</span>
+      </div>
+      <a href="https://github.com/AvitalTamir/vibecommander/releases/latest" class="btn btn-primary">
+        Download Binary
+      </a>
+    </div>
+  </section>
+
   <footer>
     <div class="footer-content">
-      <p class="footer-tagline">100% Vibe. 0% Human Slop.</p>
-
+      <div class="footer-left">
+        MIT License
+      </div>
       <div class="footer-links">
         <a href="https://github.com/AvitalTamir/vibecommander">GitHub</a>
         <a href="https://github.com/AvitalTamir/vibecommander/releases">Releases</a>
         <a href="https://github.com/AvitalTamir/vibecommander/issues">Issues</a>
-        <a href="https://github.com/AvitalTamir/vibecommander/blob/main/LICENSE">MIT License</a>
       </div>
-
-      <p class="footer-copy">
-        Made with <span class="heart">♥</span> by <a href="https://github.com/AvitalTamir" style="color: var(--neon-cyan);">Avital Tamir</a> & <a href="https://github.com/AvitalTamir/vibecommander/graphs/contributors" style="color: var(--neon-cyan);">Friends</a>
-      </p>
     </div>
   </footer>
-
-  <script>
-    // Scroll animation observer
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible');
-        }
-      });
-    }, {
-      threshold: 0.1,
-      rootMargin: '0px 0px -50px 0px'
-    });
-
-    document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
-
-    // Theme card hover effect
-    document.querySelectorAll('.theme-card').forEach(card => {
-      card.addEventListener('mouseenter', () => {
-        card.style.transform = 'scale(1.05) rotate(1deg)';
-      });
-      card.addEventListener('mouseleave', () => {
-        card.style.transform = 'scale(1)';
-      });
-    });
-  </script>
 </body>
 </html>
