@@ -8,7 +8,7 @@
 
 # Vibe Commander
 
-A terminal-based IVE (Interactive Vibe Environment) for AI coding assistants. Norton Commander vibes, modern AI workflows.
+A terminal-based IVE (Integrated Vibe Environment) for AI coding assistants. Norton Commander vibes, modern AI workflows.
 
 ## Why?
 
