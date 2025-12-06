@@ -106,17 +106,18 @@
       color: var(--text-primary);
     }
 
-    .nav-cta {
+    .nav-links a.nav-cta {
       background: var(--text-primary);
-      color: var(--bg-primary);
+      color: #000;
       padding: 0.5rem 1rem;
       border-radius: 6px;
       font-weight: 600;
-      transition: opacity 0.2s;
+      transition: all 0.2s;
     }
 
-    .nav-cta:hover {
-      opacity: 0.9;
+    .nav-links a.nav-cta:hover {
+      background: var(--pink);
+      color: #000;
     }
 
     /* Hero */
@@ -699,10 +700,6 @@
   <section class="hero">
     <div class="hero-gradient"></div>
     <div class="hero-content">
-      <div class="hero-badge">
-        <span class="hero-badge-dot"></span>
-        Built for AI-assisted development
-      </div>
       <h1 class="hero-title">
         <span class="hero-title-gradient">Time to ditch your IDE</span>
       </h1>
