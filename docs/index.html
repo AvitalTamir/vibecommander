@@ -697,18 +697,8 @@
         justify-content: center;
       }
 
-      .install-preview {
-        flex-direction: column;
-        text-align: center;
-        overflow-x: auto;
-        margin: 2rem 0 0;
-      }
-
-      .install-code {
-        font-size: 0.7rem;
-        overflow-x: auto;
-        display: block;
-        white-space: nowrap;
+      .hero-install {
+        display: none !important;
       }
 
       .hero-screenshot {
@@ -780,7 +770,7 @@
         </a>
       </div>
 
-      <div class="install-preview">
+      <div class="install-preview hero-install">
         <code class="install-code"><span>$</span> go install github.com/avitaltamir/vibecommander/cmd/vc@latest</code>
         <button class="copy-btn" onclick="navigator.clipboard.writeText('go install github.com/avitaltamir/vibecommander/cmd/vc@latest')">Copy</button>
       </div>
