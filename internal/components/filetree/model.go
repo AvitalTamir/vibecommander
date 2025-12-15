@@ -315,7 +315,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (Model, tea.Cmd) {
 	mouse := msg.Mouse()
 	if mouse.Button == tea.MouseLeft {
 		// Calculate which item was clicked
-		clickedIdx := m.offset + mouse.Y - 2 // Account for border and title
+		clickedIdx := m.offset + mouse.Y - 1 // Account for top border
 		if clickedIdx >= 0 && clickedIdx < len(m.visible) {
 			m.cursor = clickedIdx
 			return m.handleSelect()
