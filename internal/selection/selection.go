@@ -70,9 +70,17 @@ func (m *Model) ClearSelection() {
 	m.Selection = Selection{}
 }
 
-// HasSelection returns true if there's a valid selection.
+// HasSelection returns true if there's a valid completed selection.
 func (m Model) HasSelection() bool {
 	return m.Selection.Complete && !m.positionsEqual(m.Selection.Start, m.Selection.End)
+}
+
+// HasVisibleSelection returns true if there's a visible selection (active or complete with different start/end).
+func (m Model) HasVisibleSelection() bool {
+	if !m.Selection.Active && !m.Selection.Complete {
+		return false
+	}
+	return !m.positionsEqual(m.Selection.Start, m.Selection.End)
 }
 
 // GetSelectedText returns the selected text from the content.

@@ -14,6 +14,7 @@ import (
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/selection"
 	"github.com/avitaltamir/vibecommander/internal/theme"
+	"github.com/charmbracelet/x/ansi"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -305,8 +306,8 @@ func (m Model) renderContent() string {
 		currentMatchLine = m.matchLines[m.currentMatch]
 	}
 
-	// Check if we have an active selection
-	hasSelection := m.selection.Selection.Active || m.selection.Selection.Complete
+	// Check if we have a visible selection (with actual range, not just a click)
+	hasSelection := m.selection.HasVisibleSelection()
 
 	// Split both raw and highlighted content
 	rawLines := strings.Split(m.content, "\n")
@@ -343,9 +344,9 @@ func (m Model) renderContent() string {
 				lineContent = highlightedLines[i]
 			}
 		} else if hasSelection && i < len(rawLines) {
-			// Render with selection highlighting (uses raw text for accurate positioning)
+			// Render with selection highlighting on top of syntax highlighting
 			lineNum = lineNumStyle.Render(padLeft(i+1, 4))
-			lineContent = m.renderLineWithSelection(rawLines[i], i)
+			lineContent = m.renderLineWithSelection(highlightedLines[i], i)
 		} else {
 			lineNum = lineNumStyle.Render(padLeft(i+1, 4))
 			lineContent = highlightedLines[i]
@@ -362,7 +363,8 @@ func (m Model) renderContent() string {
 	return result.String()
 }
 
-// renderLineWithSelection renders a line with selection highlighting.
+// renderLineWithSelection renders a line with selection highlighting on top of syntax highlighting.
+// Uses ANSI-aware string operations to preserve existing syntax highlighting colors.
 func (m Model) renderLineWithSelection(line string, lineNum int) string {
 	if !m.selection.Selection.Active && !m.selection.Selection.Complete {
 		return line
@@ -380,9 +382,12 @@ func (m Model) renderLineWithSelection(line string, lineNum int) string {
 		return line
 	}
 
+	// Get visible width of the line (excluding ANSI codes)
+	lineWidth := ansi.StringWidth(line)
+
 	// Determine selection bounds for this line
 	selStart := 0
-	selEnd := len(line)
+	selEnd := lineWidth
 
 	if lineNum == start.Line {
 		selStart = start.Column
@@ -395,23 +400,40 @@ func (m Model) renderLineWithSelection(line string, lineNum int) string {
 	if selStart < 0 {
 		selStart = 0
 	}
-	if selEnd > len(line) {
-		selEnd = len(line)
+	if selEnd > lineWidth {
+		selEnd = lineWidth
 	}
 	if selStart >= selEnd {
 		return line
 	}
 
-	// Build result with selection highlighting
+	// Use ANSI-aware cutting to preserve syntax highlighting
+	// ansi.Cut(s, left, right) extracts characters from position left to right
 	selStyle := selection.SelectionStyle()
 	var result strings.Builder
 
+	// Part before selection (preserves syntax highlighting)
 	if selStart > 0 {
-		result.WriteString(line[:selStart])
+		result.WriteString(ansi.Cut(line, 0, selStart))
 	}
-	result.WriteString(selStyle.Render(line[selStart:selEnd]))
-	if selEnd < len(line) {
-		result.WriteString(line[selEnd:])
+
+	// Selected part - apply selection background on top of syntax colors
+	// We need to handle ANSI reset sequences inside the selected part,
+	// as they would clear our background. Replace resets with reset+background.
+	selectedPart := ansi.Cut(line, selStart, selEnd)
+
+	// Selection background color from theme: #3D2D5E = rgb(61, 45, 94)
+	// ANSI 24-bit background: \x1b[48;2;R;G;Bm
+	selBg := "\x1b[48;2;61;45;94m"
+	// Replace SGR reset sequences with reset + re-apply background
+	selectedPart = strings.ReplaceAll(selectedPart, "\x1b[0m", "\x1b[0m"+selBg)
+	selectedPart = strings.ReplaceAll(selectedPart, "\x1b[m", "\x1b[m"+selBg)
+
+	result.WriteString(selStyle.Render(selectedPart))
+
+	// Part after selection (preserves syntax highlighting)
+	if selEnd < lineWidth {
+		result.WriteString(ansi.Cut(line, selEnd, lineWidth))
 	}
 
 	return result.String()
