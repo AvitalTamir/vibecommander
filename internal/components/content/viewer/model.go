@@ -741,13 +741,16 @@ func padLeft(n, width int) string {
 const lineNumberWidth = 7 // 4 digits + " │ "
 
 // screenToTextPosition converts screen coordinates to text line and column.
-// Takes into account the viewport scroll offset and line number prefix.
+// Takes into account the viewport scroll offset, line number prefix, and panel border.
 func (m Model) screenToTextPosition(x, y int) (line, col int) {
-	// Y coordinate: add viewport scroll offset
-	line = y + m.viewport.YOffset()
+	// Y coordinate: subtract 1 for top border, then add viewport scroll offset
+	line = y - 1 + m.viewport.YOffset()
+	if line < 0 {
+		line = 0
+	}
 
-	// X coordinate: subtract line number prefix width
-	col = x - lineNumberWidth
+	// X coordinate: subtract 1 for left border, then subtract line number prefix width
+	col = x - 1 - lineNumberWidth
 	if col < 0 {
 		col = 0
 	}

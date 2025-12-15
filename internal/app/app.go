@@ -1778,7 +1778,11 @@ func (m *Model) routeMouseClickToPanel(msg tea.MouseClickMsg) tea.Cmd {
 			m.gitPanel, cmd = m.gitPanel.Update(tea.MouseClickMsg(adjustedMouse))
 		}
 	case PanelContent:
-		m.content, cmd = m.content.Update(msg)
+		// Adjust X coordinate relative to content panel (starts at LeftWidth)
+		contentX, _, _, _ := m.layout.RightPanelBounds()
+		adjustedMouse := mouse
+		adjustedMouse.X = mouse.X - contentX
+		m.content, cmd = m.content.Update(tea.MouseClickMsg(adjustedMouse))
 	case PanelMiniBuffer:
 		if m.miniVisible {
 			m.miniBuffer, cmd = m.miniBuffer.Update(msg)
@@ -1815,7 +1819,22 @@ func (m *Model) routeMouseToPanel(msg tea.Msg) tea.Cmd {
 	case PanelFileTree:
 		m.fileTree, cmd = m.fileTree.Update(msg)
 	case PanelContent:
-		m.content, cmd = m.content.Update(msg)
+		// Adjust X coordinate relative to content panel (starts at LeftWidth)
+		contentX, _, _, _ := m.layout.RightPanelBounds()
+		switch mm := msg.(type) {
+		case tea.MouseMotionMsg:
+			mouse := mm.Mouse()
+			adjustedMouse := mouse
+			adjustedMouse.X = mouse.X - contentX
+			m.content, cmd = m.content.Update(tea.MouseMotionMsg(adjustedMouse))
+		case tea.MouseReleaseMsg:
+			mouse := mm.Mouse()
+			adjustedMouse := mouse
+			adjustedMouse.X = mouse.X - contentX
+			m.content, cmd = m.content.Update(tea.MouseReleaseMsg(adjustedMouse))
+		default:
+			m.content, cmd = m.content.Update(msg)
+		}
 	case PanelMiniBuffer:
 		if m.miniVisible {
 			m.miniBuffer, cmd = m.miniBuffer.Update(msg)

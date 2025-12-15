@@ -215,6 +215,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		line, col := m.screenToTextPosition(mouse.X, mouse.Y)
 		m.selection.StartSelection(line, col)
 		m.updateSelectionContent()
+		m.cachedView = m.renderVT() // Force re-render with selection
 		return m, nil
 
 	case tea.MouseMotionMsg:
@@ -223,6 +224,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if m.selection.Selection.Active {
 			line, col := m.screenToTextPosition(mouse.X, mouse.Y)
 			m.selection.UpdateSelection(line, col)
+			m.cachedView = m.renderVT() // Force re-render with selection
 			return m, nil
 		}
 
@@ -233,6 +235,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			line, col := m.screenToTextPosition(mouse.X, mouse.Y)
 			m.selection.UpdateSelection(line, col)
 			m.selection.EndSelection()
+			m.cachedView = m.renderVT() // Force re-render with selection
 			return m, nil
 		}
 
@@ -286,12 +289,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if selection.IsCopyKey(msg.String()) && m.selection.HasSelection() {
 			_ = m.selection.CopyToClipboard()
 			m.selection.ClearSelection()
+			m.cachedView = m.renderVT() // Force re-render without selection
 			return m, nil
 		}
 
 		// Clear selection on Escape
 		if key.Code == tea.KeyEscape && m.selection.HasSelection() {
 			m.selection.ClearSelection()
+			m.cachedView = m.renderVT() // Force re-render without selection
 			return m, nil
 		}
 
@@ -897,8 +902,13 @@ func (m Model) ContinueReading() tea.Cmd {
 // screenToTextPosition converts screen coordinates to text line and column.
 // For terminal, coordinates map directly to the visible buffer position.
 func (m Model) screenToTextPosition(x, y int) (line, col int) {
-	// Y coordinate: adjust for scroll offset (if viewing scrollback)
-	line = y
+	// Y coordinate: subtract 1 for top border, then adjust for scroll offset
+	adjustedY := y - 1
+	if adjustedY < 0 {
+		adjustedY = 0
+	}
+
+	line = adjustedY
 	if m.scrollOffset > 0 {
 		// When scrolled up, the visible lines are from scrollback
 		scrollbackLen := len(m.scrollback)
@@ -906,11 +916,14 @@ func (m Model) screenToTextPosition(x, y int) (line, col int) {
 		if startIdx < 0 {
 			startIdx = 0
 		}
-		line = startIdx + y
+		line = startIdx + adjustedY
 	}
 
-	// X coordinate maps directly
-	col = x
+	// X coordinate: subtract 1 for left border
+	col = x - 1
+	if col < 0 {
+		col = 0
+	}
 
 	return line, col
 }
