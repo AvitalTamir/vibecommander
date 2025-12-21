@@ -60,6 +60,7 @@ type Model struct {
 	scrollback    []string // Lines that scrolled off the top
 	scrollOffset  int      // 0 = live view, >0 = scrolled up N lines
 	maxScrollback int      // Max lines to keep
+	scrollLocked  bool     // True when user has scrolled into history (prevents auto-scroll)
 
 	// Text selection
 	selection selection.Model
@@ -159,33 +160,70 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case OutputMsg:
 		m.mu.Lock()
-		// Capture top line before writing new output (for scrollback)
-		var prevTopLine string
-		if m.vt != nil && m.scrollOffset == 0 {
-			prevTopLine = m.getTopLine()
-		}
 
 		if m.vt != nil {
+			cols, rows := m.vt.Size()
+			prevScrollbackLen := len(m.scrollback)
+
+			// Capture all screen lines before write (for scrollback detection)
+			oldPlainLines := make([]string, rows)
+			oldRenderedLines := make([]string, rows)
+			for row := 0; row < rows; row++ {
+				oldPlainLines[row] = m.getScreenLinePlain(cols, row)
+				oldRenderedLines[row] = m.renderScreenLine(cols, row)
+			}
+
+			// Write data to virtual terminal
 			m.vt.Write(msg.Data)
 
-			// Check if the top line changed (content scrolled)
-			// If so, add the previous top line to scrollback
-			if prevTopLine != "" {
-				newTopLine := m.getTopLine()
-				if newTopLine != prevTopLine && strings.TrimSpace(prevTopLine) != "" {
-					m.addToScrollback(prevTopLine)
-					// Trim scrollback if it exceeds max
-					if len(m.scrollback) > m.maxScrollback {
-						m.scrollback = m.scrollback[len(m.scrollback)-m.maxScrollback:]
+			// Find where the new top line was in the old screen to calculate scroll amount
+			newTopLine := m.getScreenLinePlain(cols, 0)
+			scrollAmount := 0
+
+			if len(strings.TrimSpace(newTopLine)) > 0 {
+				for i := 1; i < rows; i++ {
+					if len(strings.TrimSpace(oldPlainLines[i])) > 0 && oldPlainLines[i] == newTopLine {
+						scrollAmount = i
+						break
+					}
+				}
+			}
+
+			// Add scrolled lines to scrollback
+			if scrollAmount > 0 {
+				// Normal scroll - add lines that scrolled off
+				for i := 0; i < scrollAmount; i++ {
+					if len(strings.TrimSpace(oldPlainLines[i])) > 0 {
+						m.addToScrollback(oldRenderedLines[i])
+					}
+				}
+			} else if oldPlainLines[0] != newTopLine && len(strings.TrimSpace(oldPlainLines[0])) > 0 {
+				// Screen changed but couldn't detect scroll amount
+				// This happens with large data chunks - save all non-empty old lines
+				for i := 0; i < rows; i++ {
+					if len(strings.TrimSpace(oldPlainLines[i])) > 0 {
+						m.addToScrollback(oldRenderedLines[i])
+					}
+				}
+			}
+
+			// Trim scrollback if too large
+			if len(m.scrollback) > m.maxScrollback {
+				m.scrollback = m.scrollback[len(m.scrollback)-m.maxScrollback:]
+			}
+
+			// If scroll-locked, adjust scroll offset to maintain position as new lines arrive
+			if m.scrollLocked && m.scrollOffset > 0 {
+				linesAdded := len(m.scrollback) - prevScrollbackLen
+				if linesAdded > 0 {
+					m.scrollOffset += linesAdded
+					// Cap at max scrollback
+					if m.scrollOffset > len(m.scrollback) {
+						m.scrollOffset = len(m.scrollback)
 					}
 				}
 			}
 		}
-
-		// If user has scrolled into history, maintain their position
-		// by incrementing scrollOffset to compensate for new content
-		// Only do this if we actually added to scrollback (content scrolled)
-		// Don't snap back to live view - let user scroll back manually
 
 		m.dirty = true
 		m.mu.Unlock()
@@ -201,6 +239,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.mu.Lock()
 		m.running = false
 		m.exitErr = msg.Err
+		m.scrollLocked = false // Release scroll lock on process exit
 		if m.pty != nil {
 			m.pty.Close()
 			m.pty = nil
@@ -250,6 +289,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if m.scrollOffset > maxScroll {
 				m.scrollOffset = maxScroll
 			}
+			// Enable scroll lock when scrolling into history
+			if m.scrollOffset > 0 {
+				m.scrollLocked = true
+			}
 			// Force re-render when scrolling
 			m.dirty = true
 			m.cachedView = ""
@@ -259,6 +302,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.scrollOffset -= 3
 			if m.scrollOffset < 0 {
 				m.scrollOffset = 0
+			}
+			// Release scroll lock when returning to live view
+			if m.scrollOffset == 0 {
+				m.scrollLocked = false
 			}
 			// Force re-render when scrolling
 			m.dirty = true
@@ -303,6 +350,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// Handle End key to jump back to live view when scrolled
 		if key.Code == tea.KeyEnd && m.scrollOffset > 0 {
 			m.scrollOffset = 0
+			m.scrollLocked = false // Release scroll lock
 			m.dirty = true
 			m.cachedView = ""
 			return m, m.scheduleRenderTick()
@@ -311,6 +359,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// Handle Home key to jump to top of scrollback
 		if key.Code == tea.KeyHome && len(m.scrollback) > 0 {
 			m.scrollOffset = len(m.scrollback)
+			m.scrollLocked = true // Enable scroll lock
 			m.dirty = true
 			m.cachedView = ""
 			return m, m.scheduleRenderTick()
@@ -329,6 +378,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				if m.scrollOffset > maxScroll {
 					m.scrollOffset = maxScroll
 				}
+				// Enable scroll lock when scrolling into history
+				if m.scrollOffset > 0 {
+					m.scrollLocked = true
+				}
 				m.dirty = true
 				m.cachedView = ""
 				return m, m.scheduleRenderTick()
@@ -337,6 +390,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.scrollOffset -= pageSize
 				if m.scrollOffset < 0 {
 					m.scrollOffset = 0
+				}
+				// Release scroll lock when returning to live view
+				if m.scrollOffset == 0 {
+					m.scrollLocked = false
 				}
 				m.dirty = true
 				m.cachedView = ""
@@ -851,8 +908,9 @@ func (m Model) SetSize(width, height int) Model {
 		m.ready = true
 	}
 
-	// Reset scroll offset on resize to show live view
+	// Reset scroll state on resize to show live view
 	m.scrollOffset = 0
+	m.scrollLocked = false
 
 	// Invalidate cached view on resize
 	m.cachedView = ""
