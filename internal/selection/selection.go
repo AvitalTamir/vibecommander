@@ -3,9 +3,9 @@ package selection
 import (
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/atotto/clipboard"
 	"github.com/avitaltamir/vibecommander/internal/theme"
-	"charm.land/lipgloss/v2"
 )
 
 // Position represents a character position in the text.

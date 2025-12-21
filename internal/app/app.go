@@ -8,6 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/avitaltamir/vibecommander/internal/components/content"
 	"github.com/avitaltamir/vibecommander/internal/components/content/viewer"
 	"github.com/avitaltamir/vibecommander/internal/components/filetree"
@@ -18,10 +22,6 @@ import (
 	"github.com/avitaltamir/vibecommander/internal/layout"
 	"github.com/avitaltamir/vibecommander/internal/state"
 	"github.com/avitaltamir/vibecommander/internal/theme"
-	"charm.land/bubbles/v2/key"
-	"charm.land/bubbles/v2/textinput"
-	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -60,9 +60,9 @@ type Model struct {
 	miniVisible     bool
 	gitPanelVisible bool
 	fullscreen      PanelID // Which panel is fullscreen (PanelNone = none)
-	showHelp    bool
-	showQuit    bool      // Quit confirmation dialog
-	lastQuitPress time.Time // For double-tap ctrl+q detection
+	showHelp        bool
+	showQuit        bool      // Quit confirmation dialog
+	lastQuitPress   time.Time // For double-tap ctrl+q detection
 
 	// Layout
 	layout           layout.Layout
@@ -80,9 +80,9 @@ type Model struct {
 
 	// File watcher
 	watcher              *fsnotify.Watcher
-	lastFileChangeTime   time.Time // Last file change time for debouncing
+	lastFileChangeTime   time.Time              // Last file change time for debouncing
 	pendingFileChanges   map[string]fsnotify.Op // Pending file changes to process
-	fileChangeDebouncing bool // Whether we're waiting to process file changes
+	fileChangeDebouncing bool                   // Whether we're waiting to process file changes
 
 	// Window dimensions
 	width  int
@@ -95,12 +95,12 @@ type Model struct {
 	initialThemeIdx int  // Theme index to restore
 
 	// AI assistant selection
-	aiCommand        string   // Persisted AI command (e.g., "claude", "gemini")
-	aiArgs           []string // Persisted AI args
-	showAIDialog     bool     // Whether AI selection dialog is visible
-	aiDialogIndex    int      // Current selection in dialog (0=Claude, 1=Gemini, 2=Codex, 3=Other)
-	aiDialogCustom   string   // Custom command input when "Other" selected
-	aiDialogEditing  bool     // True when editing custom command in "Other"
+	aiCommand       string   // Persisted AI command (e.g., "claude", "gemini")
+	aiArgs          []string // Persisted AI args
+	showAIDialog    bool     // Whether AI selection dialog is visible
+	aiDialogIndex   int      // Current selection in dialog (0=Claude, 1=Gemini, 2=Codex, 3=Other)
+	aiDialogCustom  string   // Custom command input when "Other" selected
+	aiDialogEditing bool     // True when editing custom command in "Other"
 
 	// Commit dialog
 	showCommitDialog bool            // Whether commit dialog is visible

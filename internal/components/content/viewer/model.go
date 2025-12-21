@@ -7,6 +7,10 @@ import (
 	"regexp"
 	"strings"
 
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
@@ -15,10 +19,6 @@ import (
 	"github.com/avitaltamir/vibecommander/internal/selection"
 	"github.com/avitaltamir/vibecommander/internal/theme"
 	"github.com/charmbracelet/x/ansi"
-	"charm.land/bubbles/v2/textinput"
-	"charm.land/bubbles/v2/viewport"
-	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 )
 
 // Messages

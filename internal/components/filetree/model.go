@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/avitaltamir/vibecommander/internal/components"
-	"github.com/avitaltamir/vibecommander/internal/git"
-	"github.com/avitaltamir/vibecommander/internal/theme"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/avitaltamir/vibecommander/internal/components"
+	"github.com/avitaltamir/vibecommander/internal/git"
+	"github.com/avitaltamir/vibecommander/internal/theme"
 )
 
 // Messages
