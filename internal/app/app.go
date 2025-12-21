@@ -331,13 +331,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !wasReady && m.restoreAI {
 			m.restoreAI = false // Only restore once
 			m.aiLaunched = true
-			m = m.setFocus(PanelContent)
-			return m, func() tea.Msg {
+			var focusCmd tea.Cmd
+			m, focusCmd = m.setFocus(PanelContent)
+			return m, tea.Batch(focusCmd, func() tea.Msg {
 				return content.LaunchAIMsg{
 					Command: "claude",
 					Args:    []string{},
 				}
-			}
+			})
 		}
 		return m, nil
 
@@ -488,8 +489,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent, m.gitPanelVisible)
 				m = m.updateSizes()
 			}
-			m = m.setFocus(PanelFileTree)
-			return m, nil
+			var focusCmd tea.Cmd
+			m, focusCmd = m.setFocus(PanelFileTree)
+			return m, focusCmd
 
 		case key.Matches(msg, m.keys.FocusContent):
 			// If content is already fullscreen, just exit fullscreen
@@ -509,8 +511,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.fullscreen = PanelContent
 				m = m.updateSizes()
 			}
-			m = m.setFocus(PanelContent)
-			return m, nil
+			var focusCmd tea.Cmd
+			m, focusCmd = m.setFocus(PanelContent)
+			return m, focusCmd
 
 		case key.Matches(msg, m.keys.ToggleMini):
 			// Exit fullscreen if in fullscreen mode
@@ -520,44 +523,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// If terminal is visible but not focused, just focus it
 			if m.miniVisible && m.focus != PanelMiniBuffer {
-				m = m.setFocus(PanelMiniBuffer)
-				return m, nil
+				var focusCmd tea.Cmd
+				m, focusCmd = m.setFocus(PanelMiniBuffer)
+				return m, focusCmd
 			}
 			// Otherwise toggle terminal on/off
 			m.miniVisible = !m.miniVisible
 			m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent, m.gitPanelVisible)
 			m = m.updateSizes()
+			var focusCmd tea.Cmd
 			if m.miniVisible {
-				m = m.setFocus(PanelMiniBuffer)
+				m, focusCmd = m.setFocus(PanelMiniBuffer)
 				// Start shell if not running
 				if !m.miniBuffer.Running() {
-					return m, m.miniBuffer.StartShell()
+					return m, tea.Batch(focusCmd, m.miniBuffer.StartShell())
 				}
 			} else {
-				m = m.setFocus(m.prevFocus)
+				m, focusCmd = m.setFocus(m.prevFocus)
 			}
-			return m, nil
+			return m, focusCmd
 
 		case key.Matches(msg, m.keys.ToggleGitPanel):
 			// If git panel is visible but not focused, just focus it
 			if m.gitPanelVisible && m.focus != PanelGitPanel {
-				m = m.setFocus(PanelGitPanel)
-				return m, nil
+				var focusCmd tea.Cmd
+				m, focusCmd = m.setFocus(PanelGitPanel)
+				return m, focusCmd
 			}
 			// Otherwise toggle git panel visibility
 			m.gitPanelVisible = !m.gitPanelVisible
 			m.layout = layout.Calculate(m.width, m.height, m.miniVisible, m.leftPanelPercent, m.gitPanelVisible)
 			m = m.updateSizes()
+			var focusCmd tea.Cmd
 			if m.gitPanelVisible {
 				// Focus git panel when opened
-				m = m.setFocus(PanelGitPanel)
+				m, focusCmd = m.setFocus(PanelGitPanel)
 			} else {
 				// Return focus to file tree when closed
 				if m.focus == PanelGitPanel {
-					m = m.setFocus(PanelFileTree)
+					m, focusCmd = m.setFocus(PanelFileTree)
 				}
 			}
-			return m, nil
+			return m, focusCmd
 
 		case key.Matches(msg, m.keys.SelectAI):
 			// Show AI selection dialog
@@ -578,13 +585,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Launch AI assistant in content pane
 			m.aiLaunched = true
-			m = m.setFocus(PanelContent)
-			return m, func() tea.Msg {
+			var focusCmd tea.Cmd
+			m, focusCmd = m.setFocus(PanelContent)
+			return m, tea.Batch(focusCmd, func() tea.Msg {
 				return content.LaunchAIMsg{
 					Command: m.aiCommand,
 					Args:    m.aiArgs,
 				}
-			}
+			})
 
 		case key.Matches(msg, m.keys.CycleTheme):
 			// Cycle to next theme
@@ -619,8 +627,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case FocusMsg:
-		m = m.setFocus(msg.Target)
-		return m, nil
+		var focusCmd tea.Cmd
+		m, focusCmd = m.setFocus(msg.Target)
+		return m, focusCmd
 
 	case ToggleMiniBufferMsg:
 		m.miniVisible = !m.miniVisible
@@ -631,10 +640,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case filetree.SelectMsg:
 		// File selected in file tree - open it in content pane and focus viewer
 		if !msg.IsDir {
-			m = m.setFocus(PanelContent)
-			return m, func() tea.Msg {
+			var focusCmd tea.Cmd
+			m, focusCmd = m.setFocus(PanelContent)
+			return m, tea.Batch(focusCmd, func() tea.Msg {
 				return content.OpenFileMsg{Path: msg.Path}
-			}
+			})
 		}
 		return m, nil
 
@@ -684,10 +694,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case gitpanel.OpenFileMsg:
 		// Open file from git panel - same as file tree behavior
 		fullPath := filepath.Join(m.workDir, msg.Path)
-		m = m.setFocus(PanelContent)
-		return m, func() tea.Msg {
+		var focusCmd tea.Cmd
+		m, focusCmd = m.setFocus(PanelContent)
+		return m, tea.Batch(focusCmd, func() tea.Msg {
 			return content.OpenFileMsg{Path: fullPath}
-		}
+		})
 
 	case filetree.LoadedMsg:
 		// Route to file tree
@@ -772,14 +783,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					// Also focus the content panel if not already focused
 					if m.focus != PanelContent {
-						m = m.setFocus(PanelContent)
+						var focusCmd tea.Cmd
+						m, focusCmd = m.setFocus(PanelContent)
+						if focusCmd != nil {
+							cmds = append(cmds, focusCmd)
+						}
 					}
 					return m, tea.Batch(cmds...)
 				}
 			}
 
 			if targetPanel != PanelNone && targetPanel != m.focus {
-				m = m.setFocus(targetPanel)
+				var focusCmd tea.Cmd
+				m, focusCmd = m.setFocus(targetPanel)
+				if focusCmd != nil {
+					cmds = append(cmds, focusCmd)
+				}
 			}
 		}
 		// Route click to the appropriate panel
@@ -1303,7 +1322,7 @@ func gitStatusEqual(a, b *git.Status) bool {
 }
 
 // setFocus changes focus to the specified panel.
-func (m Model) setFocus(target PanelID) Model {
+func (m Model) setFocus(target PanelID) (Model, tea.Cmd) {
 	// Blur previously focused component
 	switch m.focus {
 	case PanelFileTree:
@@ -1320,18 +1339,19 @@ func (m Model) setFocus(target PanelID) Model {
 	m.focus = target
 
 	// Focus new component
+	var cmd tea.Cmd
 	switch target {
 	case PanelFileTree:
 		m.fileTree = m.fileTree.Focus()
 	case PanelGitPanel:
 		m.gitPanel = m.gitPanel.Focus()
 	case PanelContent:
-		m.content = m.content.Focus()
+		m.content, cmd = m.content.Focus()
 	case PanelMiniBuffer:
 		m.miniBuffer = m.miniBuffer.Focus()
 	}
 
-	return m
+	return m, cmd
 }
 
 // Focus returns the currently focused panel.
@@ -1580,13 +1600,14 @@ func (m Model) handleAIDialog(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.saveState()
 				// Launch the AI
 				m.aiLaunched = true
-				m = m.setFocus(PanelContent)
-				return m, func() tea.Msg {
+				var focusCmd tea.Cmd
+				m, focusCmd = m.setFocus(PanelContent)
+				return m, tea.Batch(focusCmd, func() tea.Msg {
 					return content.LaunchAIMsg{
 						Command: m.aiCommand,
 						Args:    m.aiArgs,
 					}
-				}
+				})
 			}
 			return m, nil
 		case "backspace":
@@ -1657,13 +1678,14 @@ func (m Model) handleAIDialog(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.saveState()
 		// Launch the AI
 		m.aiLaunched = true
-		m = m.setFocus(PanelContent)
-		return m, func() tea.Msg {
+		var focusCmd tea.Cmd
+		m, focusCmd = m.setFocus(PanelContent)
+		return m, tea.Batch(focusCmd, func() tea.Msg {
 			return content.LaunchAIMsg{
 				Command: m.aiCommand,
 				Args:    m.aiArgs,
 			}
-		}
+		})
 	}
 	return m, nil
 }

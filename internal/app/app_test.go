@@ -226,7 +226,7 @@ func TestSetFocus(t *testing.T) {
 	assert.Equal(t, PanelFileTree, m.focus)
 
 	// Set focus to content
-	m = m.setFocus(PanelContent)
+	m, _ = m.setFocus(PanelContent)
 	assert.Equal(t, PanelContent, m.focus)
 
 	// Verify file tree is blurred and content is focused
@@ -234,7 +234,7 @@ func TestSetFocus(t *testing.T) {
 	assert.True(t, m.content.Focused())
 
 	// Set focus back to file tree
-	m = m.setFocus(PanelFileTree)
+	m, _ = m.setFocus(PanelFileTree)
 	assert.Equal(t, PanelFileTree, m.focus)
 	assert.True(t, m.fileTree.Focused())
 	assert.False(t, m.content.Focused())

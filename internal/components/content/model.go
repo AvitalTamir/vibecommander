@@ -183,11 +183,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case SourceAI:
 			if m.hasAIContent {
 				m.mode = ModeAI
-				m.terminal = m.terminal.Focus()
+				var cmd tea.Cmd
+				m.terminal, cmd = m.terminal.Focus()
 				m.viewer = m.viewer.Blur()
+				if cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 			}
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case OpenFileMsg:
 		m.currentPath = msg.Path
@@ -212,7 +216,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.aiCommand = msg.Command // Store the AI command name
 		m.hasAIContent = true
 		// Focus the terminal since we're switching to AI mode
-		m.terminal = m.terminal.Focus()
+		var focusCmd tea.Cmd
+		m.terminal, focusCmd = m.terminal.Focus()
+		if focusCmd != nil {
+			cmds = append(cmds, focusCmd)
+		}
 		// Start the AI command
 		var cmd tea.Cmd
 		m.terminal, cmd = m.terminal.Update(terminal.StartMsg{
@@ -378,20 +386,21 @@ func (m Model) CurrentPath() string {
 }
 
 // Focus gives focus to this component.
-func (m Model) Focus() Model {
+func (m Model) Focus() (Model, tea.Cmd) {
 	m.Base.Focus()
 
 	// Propagate focus to active sub-component
+	var cmd tea.Cmd
 	switch m.mode {
 	case ModeViewer:
 		m.viewer = m.viewer.Focus()
 	case ModeDiff:
 		m.diff = m.diff.Focus()
 	case ModeTerminal, ModeAI:
-		m.terminal = m.terminal.Focus()
+		m.terminal, cmd = m.terminal.Focus()
 	}
 
-	return m
+	return m, cmd
 }
 
 // Blur removes focus from this component.

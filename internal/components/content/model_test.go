@@ -60,7 +60,7 @@ func TestFocusBlur(t *testing.T) {
 
 	assert.False(t, m.Focused())
 
-	m = m.Focus()
+	m, _ = m.Focus()
 	assert.True(t, m.Focused())
 
 	m = m.Blur()

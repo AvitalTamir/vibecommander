@@ -883,9 +883,16 @@ func colorToANSI(c vt10x.Color, isFG bool) string {
 }
 
 // Focus gives focus to this component.
-func (m Model) Focus() Model {
+func (m Model) Focus() (Model, tea.Cmd) {
 	m.Base.Focus()
-	return m
+	// Reset render scheduling state - ticks may have been lost while unfocused
+	// because they were routed to a different panel
+	m.renderScheduled = false
+	// Restart render tick loop if terminal is running
+	if m.running {
+		return m, m.scheduleRenderTick()
+	}
+	return m, nil
 }
 
 // Blur removes focus from this component.
