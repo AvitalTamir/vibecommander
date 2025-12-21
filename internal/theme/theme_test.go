@@ -216,10 +216,10 @@ func TestCalculateTitleRegions(t *testing.T) {
 
 	t.Run("dual titles", func(t *testing.T) {
 		opts := PanelTitleOptions{
-			Title:          "file.txt",
-			PrimaryActive:  true,
-			SecondaryTitle: "Claude",
-			SecondaryActive: false,
+			Title:               "file.txt",
+			PrimaryActive:       true,
+			SecondaryTitle:      "Claude",
+			SecondaryActive:     false,
 			SecondaryShowStatus: true,
 		}
 
@@ -233,7 +233,7 @@ func TestCalculateTitleRegions(t *testing.T) {
 		// Secondary starts after primary + 2 space separator
 		// "[ Claude ● ]" = 4 + 6 + 2 = 12 chars
 		assert.Equal(t, 17, secondary.StartX) // 15 + 2
-		assert.Equal(t, 29, secondary.EndX) // 17 + 12
+		assert.Equal(t, 29, secondary.EndX)   // 17 + 12
 		assert.False(t, secondary.IsActive)
 	})
 

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/avitaltamir/vibecommander/internal/app"
 	tea "charm.land/bubbletea/v2"
+	"github.com/avitaltamir/vibecommander/internal/app"
 )
 
 var version = "dev"

@@ -6,14 +6,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/avitaltamir/vibecommander/internal/components"
 	"github.com/avitaltamir/vibecommander/internal/components/content/diff"
 	"github.com/avitaltamir/vibecommander/internal/components/content/viewer"
 	"github.com/avitaltamir/vibecommander/internal/components/terminal"
 	"github.com/avitaltamir/vibecommander/internal/git"
 	"github.com/avitaltamir/vibecommander/internal/theme"
-	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 )
 
 // Mode determines what the content pane displays.

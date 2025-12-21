@@ -12,9 +12,9 @@ import (
 
 // Style cache for frequently used styles
 var (
-	styleCache     = make(map[string]lipgloss.Style)
-	styleCacheMu   sync.RWMutex
-	styleCacheVer  uint64 // Incremented when theme changes to invalidate cache
+	styleCache    = make(map[string]lipgloss.Style)
+	styleCacheMu  sync.RWMutex
+	styleCacheVer uint64 // Incremented when theme changes to invalidate cache
 )
 
 // Border definitions
@@ -307,11 +307,11 @@ type PanelTitleOptions struct {
 
 	// Dual-title support for content panel
 	// When SecondaryTitle is set, both titles are shown side-by-side
-	SecondaryTitle         string  // Second title (e.g., AI command name when viewing file)
-	SecondaryStatusRunning bool    // Running indicator for secondary title
-	SecondaryShowStatus    bool    // Whether to show status for secondary title
-	SecondaryActive        bool    // Whether secondary title is the active view
-	PrimaryActive          bool    // Whether primary title is the active view
+	SecondaryTitle         string // Second title (e.g., AI command name when viewing file)
+	SecondaryStatusRunning bool   // Running indicator for secondary title
+	SecondaryShowStatus    bool   // Whether to show status for secondary title
+	SecondaryActive        bool   // Whether secondary title is the active view
+	PrimaryActive          bool   // Whether primary title is the active view
 }
 
 // TitleSegmentInfo holds pre-calculated information about a title segment
@@ -546,7 +546,7 @@ func stripAnsi(s string) string {
 func CalculateTitleRegions(opts PanelTitleOptions) (primary, secondary TitleSegmentInfo) {
 	// Primary title always starts at position 3 (after corner + 2 filler)
 	// Format: "[ Title ]" or "[ Title ● ]"
-	primaryStart := 3 // 1 for corner + 2 for left filler
+	primaryStart := 3                 // 1 for corner + 2 for left filler
 	primaryLen := 4 + len(opts.Title) // "[ " + title + " ]"
 	if opts.ShowStatus {
 		primaryLen += 2 // " ●" or " ○"
